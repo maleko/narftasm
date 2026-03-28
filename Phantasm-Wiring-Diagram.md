@@ -4,6 +4,7 @@
 
 | Component | Purpose |
 |---|---|
+| **SPST On-Off Toggle Switch** | Master power switch — cuts battery power to the board |
 | **4-Position 2-Pole Rotary Switch (2P4T)** | Selects fire mode (Safety / Single / Burst / Full Auto) |
 | **Trigger Microswitch** | Already installed — fires darts |
 | **KY-040 Rotary Encoder** | Adjusts flywheel RPM (3000–8000 in 250 RPM steps) |
@@ -24,7 +25,19 @@ in binary.
 
 ```mermaid
 graph TD
+    subgraph BAT["LiPo Battery"]
+        BPOS["B+ (Positive)"]
+        BNEG["B− (Negative)"]
+    end
+
+    subgraph PWR["SPST On-Off Toggle Switch"]
+        PWRIN["Terminal 1 (Battery B+)"]
+        PWROUT["Terminal 2 (NBC B+)"]
+    end
+
     subgraph NBC["Narfduino Brushless Compleat"]
+        NBCBPOS["B+ pad"]
+        NBCBNEG["B− pad"]
         D2["D2 — PIN_SELECT_1"]
         D3["D3 — PIN_SELECT_2"]
         D4["D4 — PIN_ENCODER_CLK"]
@@ -67,6 +80,10 @@ graph TD
         OGND["GND"]
     end
 
+    BPOS -->|"wire"| PWRIN
+    PWROUT -->|"wire"| NBCBPOS
+    BNEG -->|"wire"| NBCBNEG
+
     P1C -->|"wire"| D2
     P2C -->|"wire"| D3
     P1_1 -->|"wire"| GND
@@ -88,6 +105,8 @@ graph TD
     OVCC -->|"wire"| VCC
     OGND -->|"wire"| GND
 
+    style BAT fill:#5c5c1a,stroke:#ffee36,color:#ffffff
+    style PWR fill:#5c4a1a,stroke:#ff8c36,color:#ffffff
     style NBC fill:#1a3a5c,stroke:#4a8eff,color:#ffffff
     style SW fill:#5c3a1a,stroke:#ffb236,color:#ffffff
     style TRIG fill:#3a5c1a,stroke:#30b570,color:#ffffff
@@ -109,6 +128,8 @@ graph TD
 
 | NBC Pad | Connects To |
 |---|---|
+| **B+** | On-off switch Terminal 2 (other terminal to battery B+) |
+| **B−** | Battery B− (direct) |
 | **D2** | Rotary switch — Pole A Common |
 | **D3** | Rotary switch — Pole B Common |
 | **D4** | Rotary encoder — CLK |
@@ -149,6 +170,9 @@ The 2P4T rotary switch has 2 poles (A and B), each with a common pin and
 
 ## Notes
 
+- The **on-off switch** is wired in-line on the battery positive lead. When
+  off, no power reaches the board. Use a switch rated for your battery
+  voltage and current (e.g. 20A for a 4S LiPo).
 - All select pins use `INPUT_PULLUP` — no external resistors needed.
 - Switches connect pins to **GND** to pull them LOW (active).
 - When a pin is not connected to GND, the internal pull-up holds it HIGH.
