@@ -45,9 +45,9 @@ int lastEncoderCLK = HIGH;
 // 3: HIGH/LOW = Burst, 4: LOW/LOW = Full Auto
 FireMode getFireMode( bool select1Low, bool select2Low )
 {
-  if( select1Low && !select2Low )
-    return FIRE_MODE_SINGLE;
   if( !select1Low && select2Low )
+    return FIRE_MODE_SINGLE;
+  if( select1Low && !select2Low )
     return FIRE_MODE_BURST;
   if( select1Low && select2Low )
     return FIRE_MODE_FULL_AUTO;
