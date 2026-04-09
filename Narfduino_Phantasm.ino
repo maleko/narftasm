@@ -300,6 +300,7 @@ void setup()
   pinMode( PIN_ENCODER_SW, INPUT_PULLUP );
 
   lastEncoderCLK = digitalRead( PIN_ENCODER_CLK );
+  lastButtonState = digitalRead( PIN_ENCODER_SW );
 
   display.begin();
   display.setFont( u8x8_font_chroma48medium8_r );
