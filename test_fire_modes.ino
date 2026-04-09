@@ -13,8 +13,14 @@ enum FireMode {
 // ---- Encoder mode enum (must match implementation) ----
 enum EncoderMode {
   ENCODER_MODE_RPM,
-  ENCODER_MODE_BURST
+  ENCODER_MODE_BURST,
+  ENCODER_MODE_PREREV
 };
+
+#define PRE_REV_RPM_DEFAULT 3000
+#define PRE_REV_RPM_MIN 2000
+#define PRE_REV_RPM_MAX 5000
+#define ENCODER_PRE_REV_STEP 250
 
 #define BURST_COUNT_DEFAULT 3
 #define BURST_COUNT_MIN 2
@@ -34,6 +40,8 @@ EncoderMode toggleEncoderMode( EncoderMode currentMode );
 int clampBurstCount( int count, int minCount, int maxCount );
 int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount );
 const char* getEncoderModeLabel( EncoderMode mode );
+bool isPreRevActive( bool pinHigh );
+unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -274,9 +282,14 @@ void testToggleEncoderModeFromRPMToBurst()
   assertEq( "toggleEncoderMode: RPM -> BURST", ENCODER_MODE_BURST, toggleEncoderMode( ENCODER_MODE_RPM ) );
 }
 
-void testToggleEncoderModeFromBurstToRPM()
+void testToggleEncoderModeFromBurstToPreRev()
 {
-  assertEq( "toggleEncoderMode: BURST -> RPM", ENCODER_MODE_RPM, toggleEncoderMode( ENCODER_MODE_BURST ) );
+  assertEq( "toggleEncoderMode: BURST -> PREREV", ENCODER_MODE_PREREV, toggleEncoderMode( ENCODER_MODE_BURST ) );
+}
+
+void testToggleEncoderModeFromPreRevToRPM()
+{
+  assertEq( "toggleEncoderMode: PREREV -> RPM", ENCODER_MODE_RPM, toggleEncoderMode( ENCODER_MODE_PREREV ) );
 }
 
 // ---- Encoder Mode Label Tests ----
@@ -289,6 +302,11 @@ void testGetEncoderModeLabelRPM()
 void testGetEncoderModeLabelBurst()
 {
   assertStrEq( "getEncoderModeLabel: BURST", "BURST", getEncoderModeLabel( ENCODER_MODE_BURST ) );
+}
+
+void testGetEncoderModeLabelPreRev()
+{
+  assertStrEq( "getEncoderModeLabel: PREREV", "PREREV", getEncoderModeLabel( ENCODER_MODE_PREREV ) );
 }
 
 // ---- Burst Count Clamping Tests ----
@@ -346,12 +364,69 @@ void testCalculateEncoderBurstNoDirection()
     calculateEncoderBurst( 3, 0, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
 }
 
+// ---- Pre-Rev Tests ----
+
+void testIsPreRevActiveWhenSwitchOpen()
+{
+  // NC switch: at rest pin is LOW (closed to GND).
+  // When switch is activated (opened), pin goes HIGH via INPUT_PULLUP.
+  assertBool( "isPreRevActive: pin HIGH (switch open) returns true", true, isPreRevActive( true ) );
+}
+
+void testIsPreRevInactiveWhenSwitchClosed()
+{
+  // NC switch: at rest pin is LOW (closed to GND) = pre-rev off.
+  assertBool( "isPreRevActive: pin LOW (switch closed) returns false", false, isPreRevActive( false ) );
+}
+
+void testPreRevRPMDefaultConstant()
+{
+  assertEqUL( "PRE_REV_RPM_DEFAULT is 3000", 3000, PRE_REV_RPM_DEFAULT );
+}
+
+void testPreRevRPMMinConstant()
+{
+  assertEqUL( "PRE_REV_RPM_MIN is 2000", 2000, PRE_REV_RPM_MIN );
+}
+
+void testPreRevRPMMaxConstant()
+{
+  assertEqUL( "PRE_REV_RPM_MAX is 5000", 5000, PRE_REV_RPM_MAX );
+}
+
+// ---- Pre-Rev RPM Calculation Tests ----
+
+void testCalculateEncoderPreRevRPMClockwise()
+{
+  assertEqUL( "calculateEncoderPreRevRPM: CW increases by step", 3250,
+    calculateEncoderPreRevRPM( 3000, 1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
+}
+
+void testCalculateEncoderPreRevRPMAnticlockwise()
+{
+  assertEqUL( "calculateEncoderPreRevRPM: CCW decreases by step", 2750,
+    calculateEncoderPreRevRPM( 3000, -1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
+}
+
+void testCalculateEncoderPreRevRPMClampsAtMax()
+{
+  assertEqUL( "calculateEncoderPreRevRPM: CW at max stays at max", PRE_REV_RPM_MAX,
+    calculateEncoderPreRevRPM( PRE_REV_RPM_MAX, 1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
+}
+
+void testCalculateEncoderPreRevRPMClampsAtMin()
+{
+  assertEqUL( "calculateEncoderPreRevRPM: CCW at min stays at min", PRE_REV_RPM_MIN,
+    calculateEncoderPreRevRPM( PRE_REV_RPM_MIN, -1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
+}
+
 // ---- Encoder Mode Enum Values ----
 
 void testEncoderModeEnumValues()
 {
   assertEq( "ENCODER_MODE_RPM is 0", 0, ENCODER_MODE_RPM );
   assertEq( "ENCODER_MODE_BURST is 1", 1, ENCODER_MODE_BURST );
+  assertEq( "ENCODER_MODE_PREREV is 2", 2, ENCODER_MODE_PREREV );
 }
 
 // ---- Burst Count Default ----
@@ -408,6 +483,8 @@ EncoderMode toggleEncoderMode( EncoderMode currentMode )
 {
   if( currentMode == ENCODER_MODE_RPM )
     return ENCODER_MODE_BURST;
+  if( currentMode == ENCODER_MODE_BURST )
+    return ENCODER_MODE_PREREV;
   return ENCODER_MODE_RPM;
 }
 
@@ -428,10 +505,22 @@ const char* getEncoderModeLabel( EncoderMode mode )
 {
   switch( mode )
   {
-    case ENCODER_MODE_BURST: return "BURST";
+    case ENCODER_MODE_BURST:  return "BURST";
+    case ENCODER_MODE_PREREV: return "PREREV";
     case ENCODER_MODE_RPM:
-    default:                 return "RPM";
+    default:                  return "RPM";
   }
+}
+
+unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM )
+{
+  long newRPM = (long)currentRPM + ( direction * (int)stepSize );
+  return clampRPM( newRPM, minRPM, maxRPM );
+}
+
+bool isPreRevActive( bool pinHigh )
+{
+  return pinHigh;
 }
 
 void setup()
@@ -473,12 +562,25 @@ void setup()
   testHasRPMChangedTrue();
   testHasRPMChangedFalse();
 
+  // Pre-rev tests
+  testIsPreRevActiveWhenSwitchOpen();
+  testIsPreRevInactiveWhenSwitchClosed();
+  testPreRevRPMDefaultConstant();
+  testPreRevRPMMinConstant();
+  testPreRevRPMMaxConstant();
+  testCalculateEncoderPreRevRPMClockwise();
+  testCalculateEncoderPreRevRPMAnticlockwise();
+  testCalculateEncoderPreRevRPMClampsAtMax();
+  testCalculateEncoderPreRevRPMClampsAtMin();
+
   // Encoder mode tests
   testEncoderModeEnumValues();
   testToggleEncoderModeFromRPMToBurst();
-  testToggleEncoderModeFromBurstToRPM();
+  testToggleEncoderModeFromBurstToPreRev();
+  testToggleEncoderModeFromPreRevToRPM();
   testGetEncoderModeLabelRPM();
   testGetEncoderModeLabelBurst();
+  testGetEncoderModeLabelPreRev();
 
   // Burst count tests
   testBurstCountDefault();
