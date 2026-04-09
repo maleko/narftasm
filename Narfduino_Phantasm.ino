@@ -410,7 +410,11 @@ void loop()
       if( hasRPMChanged( motorRPM, newRPM ) )
       {
         motorRPM = newRPM;
-        FlyshotSetNewMotorSpeed( motorRPM );
+        // Only update motor speed if not idling at pre-rev RPM
+        if( !idling )
+        {
+          FlyshotSetNewMotorSpeed( motorRPM );
+        }
       }
     }
     else if( encoderMode == ENCODER_MODE_BURST )
