@@ -477,6 +477,9 @@ void loop()
 
   NBCProcessFlywheelSpeed();
 
+  // Re-read pre-rev switch so toggling during firing takes effect immediately on release
+  preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
+
   if( preRevActive )
   {
     // Drop governor to idle RPM, keep flywheels spinning
