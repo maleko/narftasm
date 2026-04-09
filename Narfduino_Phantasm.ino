@@ -15,7 +15,10 @@
 #define MAX_WAIT_TIME 1000
 #define SOLENOID_PULSE_TIME 50
 #define SOLENOID_RETRACT_TIME 40
-#define BURST_COUNT 3
+#define BURST_COUNT_DEFAULT 3
+#define BURST_COUNT_MIN 2
+#define BURST_COUNT_MAX 10
+#define ENCODER_BURST_STEP 1
 #define MOTOR_RPM_MIN 3000
 #define MOTOR_RPM_MAX 8000
 #define MOTOR_RPM_DEFAULT 5000
@@ -29,6 +32,12 @@ enum FireMode {
   FIRE_MODE_FULL_AUTO
 };
 
+// --- Encoder Mode Enum ---
+enum EncoderMode {
+  ENCODER_MODE_RPM,
+  ENCODER_MODE_BURST
+};
+
 // --- OLED Display (I2C, text-only for low memory) ---
 U8X8_SSD1306_128X64_NONAME_HW_I2C display( U8X8_PIN_NONE );
 
@@ -36,9 +45,16 @@ U8X8_SSD1306_128X64_NONAME_HW_I2C display( U8X8_PIN_NONE );
 int triggerState = LOW;
 int lastTriggerState = HIGH;
 unsigned long motorRPM = MOTOR_RPM_DEFAULT;
+int burstCount = BURST_COUNT_DEFAULT;
+EncoderMode encoderMode = ENCODER_MODE_RPM;
 unsigned long displayedRPM = 0;
+int displayedBurstCount = 0;
 FireMode displayedMode = FIRE_MODE_SAFETY;
+EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
 int lastEncoderCLK = HIGH;
+int lastButtonState = HIGH;
+unsigned long lastButtonDebounceTime = 0;
+#define BUTTON_DEBOUNCE_MS 200
 
 // --- Pure Logic: Determine fire mode from 4-position rotary switch state ---
 // Position 1: HIGH/HIGH = Safety, 2: LOW/HIGH = Single,
@@ -88,6 +104,40 @@ bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
   return oldRPM != newRPM;
 }
 
+// --- Pure Logic: Toggle encoder mode ---
+EncoderMode toggleEncoderMode( EncoderMode currentMode )
+{
+  if( currentMode == ENCODER_MODE_RPM )
+    return ENCODER_MODE_BURST;
+  return ENCODER_MODE_RPM;
+}
+
+// --- Pure Logic: Clamp burst count within valid bounds ---
+int clampBurstCount( int count, int minCount, int maxCount )
+{
+  if( count < minCount ) return minCount;
+  if( count > maxCount ) return maxCount;
+  return count;
+}
+
+// --- Pure Logic: Calculate new burst count from encoder rotation ---
+int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount )
+{
+  int newCount = currentCount + ( direction * stepSize );
+  return clampBurstCount( newCount, minCount, maxCount );
+}
+
+// --- Pure Logic: Get display label for encoder mode ---
+const char* getEncoderModeLabel( EncoderMode mode )
+{
+  switch( mode )
+  {
+    case ENCODER_MODE_BURST: return "BURST";
+    case ENCODER_MODE_RPM:
+    default:                 return "RPM";
+  }
+}
+
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
 void fireSolenoidCycle()
 {
@@ -119,7 +169,7 @@ void burstFire()
   {
     if( triggerState == LOW )
     {
-      for( int i = 0; i < BURST_COUNT; i++ )
+      for( int i = 0; i < burstCount; i++ )
       {
         fireSolenoidCycle();
         NBCProcessFlywheelSpeed();
@@ -180,8 +230,27 @@ int pollEncoderDirection()
   return 0;
 }
 
+// --- Encoder Button Polling (with debounce) ---
+bool pollEncoderButton()
+{
+  int reading = digitalRead( PIN_ENCODER_SW );
+
+  if( reading == LOW && lastButtonState == HIGH )
+  {
+    if( millis() - lastButtonDebounceTime > BUTTON_DEBOUNCE_MS )
+    {
+      lastButtonDebounceTime = millis();
+      lastButtonState = reading;
+      return true;
+    }
+  }
+
+  lastButtonState = reading;
+  return false;
+}
+
 // --- Display Update (only redraws changed values to minimise I2C traffic) ---
-void updateDisplay( FireMode mode, unsigned long rpm )
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode )
 {
   if( mode != displayedMode )
   {
@@ -191,13 +260,32 @@ void updateDisplay( FireMode mode, unsigned long rpm )
     displayedMode = mode;
   }
 
-  if( hasRPMChanged( displayedRPM, rpm ) )
+  bool rpmChanged = hasRPMChanged( displayedRPM, rpm );
+  bool encModeChanged = ( encMode != displayedEncoderMode );
+
+  if( rpmChanged || encModeChanged )
   {
     display.clearLine( 2 );
     display.setCursor( 0, 2 );
+    display.print( encMode == ENCODER_MODE_RPM ? ">" : " " );
     display.print( "RPM: " );
     display.print( rpm );
     displayedRPM = rpm;
+  }
+
+  if( burst != displayedBurstCount || encModeChanged )
+  {
+    display.clearLine( 4 );
+    display.setCursor( 0, 4 );
+    display.print( encMode == ENCODER_MODE_BURST ? ">" : " " );
+    display.print( "Burst: " );
+    display.print( burst );
+    displayedBurstCount = burst;
+  }
+
+  if( encModeChanged )
+  {
+    displayedEncoderMode = encMode;
   }
 }
 
@@ -212,6 +300,7 @@ void setup()
   pinMode( PIN_ENCODER_SW, INPUT_PULLUP );
 
   lastEncoderCLK = digitalRead( PIN_ENCODER_CLK );
+  lastButtonState = digitalRead( PIN_ENCODER_SW );
 
   display.begin();
   display.setFont( u8x8_font_chroma48medium8_r );
@@ -240,6 +329,12 @@ void setup()
   display.clear();
   displayedMode = FIRE_MODE_SAFETY;
   displayedRPM = 0;
+  displayedBurstCount = 0;
+  displayedEncoderMode = ENCODER_MODE_RPM;
+
+  // Ensure the debounce period has already "elapsed" so the very first button
+  // press in loop() registers immediately, regardless of how quickly setup() ran.
+  lastButtonDebounceTime = millis() - ( BUTTON_DEBOUNCE_MS + 1 );
 }
 
 // --- Main Loop ---
@@ -248,15 +343,28 @@ void loop()
   if( NBCGetVoltage() < MIN_BATTERY_VOLTAGE )
     return;
 
-  // Poll encoder for RPM adjustment (only during idle, not mid-firing)
+  // Poll encoder button for mode toggle
+  if( pollEncoderButton() )
+  {
+    encoderMode = toggleEncoderMode( encoderMode );
+  }
+
+  // Poll encoder rotation for parameter adjustment
   int encoderDir = pollEncoderDirection();
   if( encoderDir != 0 )
   {
-    unsigned long newRPM = calculateEncoderRPM( motorRPM, encoderDir, ENCODER_RPM_STEP, MOTOR_RPM_MIN, MOTOR_RPM_MAX );
-    if( hasRPMChanged( motorRPM, newRPM ) )
+    if( encoderMode == ENCODER_MODE_RPM )
     {
-      motorRPM = newRPM;
-      FlyshotSetNewMotorSpeed( motorRPM );
+      unsigned long newRPM = calculateEncoderRPM( motorRPM, encoderDir, ENCODER_RPM_STEP, MOTOR_RPM_MIN, MOTOR_RPM_MAX );
+      if( hasRPMChanged( motorRPM, newRPM ) )
+      {
+        motorRPM = newRPM;
+        FlyshotSetNewMotorSpeed( motorRPM );
+      }
+    }
+    else
+    {
+      burstCount = calculateEncoderBurst( burstCount, encoderDir, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX );
     }
   }
 
@@ -265,7 +373,7 @@ void loop()
     digitalRead( PIN_SELECT_2 ) == LOW
   );
 
-  updateDisplay( mode, motorRPM );
+  updateDisplay( mode, motorRPM, burstCount, encoderMode );
 
   if( mode == FIRE_MODE_SAFETY )
   {
