@@ -10,7 +10,16 @@ enum FireMode {
   FIRE_MODE_FULL_AUTO
 };
 
-#define BURST_COUNT 3
+// ---- Encoder mode enum (must match implementation) ----
+enum EncoderMode {
+  ENCODER_MODE_RPM,
+  ENCODER_MODE_BURST
+};
+
+#define BURST_COUNT_DEFAULT 3
+#define BURST_COUNT_MIN 2
+#define BURST_COUNT_MAX 10
+#define ENCODER_BURST_STEP 1
 #define MOTOR_RPM_MIN 3000
 #define MOTOR_RPM_MAX 8000
 #define ENCODER_RPM_STEP 250
@@ -21,6 +30,10 @@ unsigned long clampRPM( long rpm, unsigned long minRPM, unsigned long maxRPM );
 unsigned long calculateEncoderRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 const char* getFireModeLabel( FireMode mode );
 bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM );
+EncoderMode toggleEncoderMode( EncoderMode currentMode );
+int clampBurstCount( int count, int minCount, int maxCount );
+int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount );
+const char* getEncoderModeLabel( EncoderMode mode );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -135,7 +148,7 @@ void testGetFireModeFullAuto()
 
 void testBurstCountIsThree()
 {
-  assertEq( "Burst count is 3", 3, BURST_COUNT );
+  assertEq( "Burst count default is 3", 3, BURST_COUNT_DEFAULT );
 }
 
 void testSingleShotEdgeDetection()
@@ -254,6 +267,100 @@ void testHasRPMChangedFalse()
   assertBool( "hasRPMChanged: same values returns false", false, hasRPMChanged( 5000, 5000 ) );
 }
 
+// ---- Encoder Mode Toggle Tests ----
+
+void testToggleEncoderModeFromRPMToBurst()
+{
+  assertEq( "toggleEncoderMode: RPM -> BURST", ENCODER_MODE_BURST, toggleEncoderMode( ENCODER_MODE_RPM ) );
+}
+
+void testToggleEncoderModeFromBurstToRPM()
+{
+  assertEq( "toggleEncoderMode: BURST -> RPM", ENCODER_MODE_RPM, toggleEncoderMode( ENCODER_MODE_BURST ) );
+}
+
+// ---- Encoder Mode Label Tests ----
+
+void testGetEncoderModeLabelRPM()
+{
+  assertStrEq( "getEncoderModeLabel: RPM", "RPM", getEncoderModeLabel( ENCODER_MODE_RPM ) );
+}
+
+void testGetEncoderModeLabelBurst()
+{
+  assertStrEq( "getEncoderModeLabel: BURST", "BURST", getEncoderModeLabel( ENCODER_MODE_BURST ) );
+}
+
+// ---- Burst Count Clamping Tests ----
+
+void testClampBurstCountWithinRange()
+{
+  assertEq( "clampBurstCount: value within range unchanged", 5, clampBurstCount( 5, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testClampBurstCountBelowMin()
+{
+  assertEq( "clampBurstCount: value below min clamped to min", BURST_COUNT_MIN, clampBurstCount( 0, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testClampBurstCountAboveMax()
+{
+  assertEq( "clampBurstCount: value above max clamped to max", BURST_COUNT_MAX, clampBurstCount( 15, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testClampBurstCountAtBoundaries()
+{
+  assertEq( "clampBurstCount: value at min stays at min", BURST_COUNT_MIN, clampBurstCount( BURST_COUNT_MIN, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+  assertEq( "clampBurstCount: value at max stays at max", BURST_COUNT_MAX, clampBurstCount( BURST_COUNT_MAX, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+// ---- Encoder Burst Calculation Tests ----
+
+void testCalculateEncoderBurstClockwise()
+{
+  assertEq( "calculateEncoderBurst: CW increases burst by step", 4,
+    calculateEncoderBurst( 3, 1, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testCalculateEncoderBurstAnticlockwise()
+{
+  assertEq( "calculateEncoderBurst: CCW decreases burst by step", 2,
+    calculateEncoderBurst( 3, -1, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testCalculateEncoderBurstClampsAtMax()
+{
+  assertEq( "calculateEncoderBurst: CW at max stays at max", BURST_COUNT_MAX,
+    calculateEncoderBurst( BURST_COUNT_MAX, 1, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testCalculateEncoderBurstClampsAtMin()
+{
+  assertEq( "calculateEncoderBurst: CCW at min stays at min", BURST_COUNT_MIN,
+    calculateEncoderBurst( BURST_COUNT_MIN, -1, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+void testCalculateEncoderBurstNoDirection()
+{
+  assertEq( "calculateEncoderBurst: direction 0 unchanged", 3,
+    calculateEncoderBurst( 3, 0, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
+}
+
+// ---- Encoder Mode Enum Values ----
+
+void testEncoderModeEnumValues()
+{
+  assertEq( "ENCODER_MODE_RPM is 0", 0, ENCODER_MODE_RPM );
+  assertEq( "ENCODER_MODE_BURST is 1", 1, ENCODER_MODE_BURST );
+}
+
+// ---- Burst Count Default ----
+
+void testBurstCountDefault()
+{
+  assertEq( "Burst count default is 3", 3, BURST_COUNT_DEFAULT );
+}
+
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
 
 FireMode getFireMode( bool select1Low, bool select2Low )
@@ -297,6 +404,36 @@ bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
   return oldRPM != newRPM;
 }
 
+EncoderMode toggleEncoderMode( EncoderMode currentMode )
+{
+  if( currentMode == ENCODER_MODE_RPM )
+    return ENCODER_MODE_BURST;
+  return ENCODER_MODE_RPM;
+}
+
+int clampBurstCount( int count, int minCount, int maxCount )
+{
+  if( count < minCount ) return minCount;
+  if( count > maxCount ) return maxCount;
+  return count;
+}
+
+int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount )
+{
+  int newCount = currentCount + ( direction * stepSize );
+  return clampBurstCount( newCount, minCount, maxCount );
+}
+
+const char* getEncoderModeLabel( EncoderMode mode )
+{
+  switch( mode )
+  {
+    case ENCODER_MODE_BURST: return "BURST";
+    case ENCODER_MODE_RPM:
+    default:                 return "RPM";
+  }
+}
+
 void setup()
 {
   Serial.begin( 115200 );
@@ -335,6 +472,25 @@ void setup()
   // RPM changed tests
   testHasRPMChangedTrue();
   testHasRPMChangedFalse();
+
+  // Encoder mode tests
+  testEncoderModeEnumValues();
+  testToggleEncoderModeFromRPMToBurst();
+  testToggleEncoderModeFromBurstToRPM();
+  testGetEncoderModeLabelRPM();
+  testGetEncoderModeLabelBurst();
+
+  // Burst count tests
+  testBurstCountDefault();
+  testClampBurstCountWithinRange();
+  testClampBurstCountBelowMin();
+  testClampBurstCountAboveMax();
+  testClampBurstCountAtBoundaries();
+  testCalculateEncoderBurstClockwise();
+  testCalculateEncoderBurstAnticlockwise();
+  testCalculateEncoderBurstClampsAtMax();
+  testCalculateEncoderBurstClampsAtMin();
+  testCalculateEncoderBurstNoDirection();
 
   Serial.println();
   Serial.println( "=== Results ===" );
