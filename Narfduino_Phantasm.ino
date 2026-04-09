@@ -4,6 +4,7 @@
 
 // --- Pin Definitions ---
 #define PIN_TRIGGER 6
+#define PIN_PRE_REV A1
 #define PIN_SELECT_1 2
 #define PIN_SELECT_2 3
 #define PIN_ENCODER_CLK 4
@@ -23,6 +24,10 @@
 #define MOTOR_RPM_MAX 8000
 #define MOTOR_RPM_DEFAULT 5000
 #define ENCODER_RPM_STEP 250
+#define PRE_REV_RPM_DEFAULT 3000
+#define PRE_REV_RPM_MIN 2000
+#define PRE_REV_RPM_MAX 5000
+#define ENCODER_PRE_REV_STEP 250
 
 // --- Fire Mode Enum ---
 enum FireMode {
@@ -35,7 +40,8 @@ enum FireMode {
 // --- Encoder Mode Enum ---
 enum EncoderMode {
   ENCODER_MODE_RPM,
-  ENCODER_MODE_BURST
+  ENCODER_MODE_BURST,
+  ENCODER_MODE_PREREV
 };
 
 // --- OLED Display (I2C, text-only for low memory) ---
@@ -46,11 +52,15 @@ int triggerState = LOW;
 int lastTriggerState = HIGH;
 unsigned long motorRPM = MOTOR_RPM_DEFAULT;
 int burstCount = BURST_COUNT_DEFAULT;
+unsigned long preRevRPM = PRE_REV_RPM_DEFAULT;
+bool idling = false;
 EncoderMode encoderMode = ENCODER_MODE_RPM;
 unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
 FireMode displayedMode = FIRE_MODE_SAFETY;
 EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
+bool displayedPreRev = false;
+unsigned long displayedPreRevRPM = 0;
 int lastEncoderCLK = HIGH;
 int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
@@ -104,11 +114,13 @@ bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
   return oldRPM != newRPM;
 }
 
-// --- Pure Logic: Toggle encoder mode ---
+// --- Pure Logic: Toggle encoder mode (RPM -> Burst -> Pre-Rev -> RPM) ---
 EncoderMode toggleEncoderMode( EncoderMode currentMode )
 {
   if( currentMode == ENCODER_MODE_RPM )
     return ENCODER_MODE_BURST;
+  if( currentMode == ENCODER_MODE_BURST )
+    return ENCODER_MODE_PREREV;
   return ENCODER_MODE_RPM;
 }
 
@@ -127,15 +139,31 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
   return clampBurstCount( newCount, minCount, maxCount );
 }
 
+// --- Pure Logic: Calculate new pre-rev RPM from encoder rotation ---
+unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM )
+{
+  long newRPM = (long)currentRPM + ( direction * (int)stepSize );
+  return clampRPM( newRPM, minRPM, maxRPM );
+}
+
 // --- Pure Logic: Get display label for encoder mode ---
 const char* getEncoderModeLabel( EncoderMode mode )
 {
   switch( mode )
   {
-    case ENCODER_MODE_BURST: return "BURST";
+    case ENCODER_MODE_BURST:  return "BURST";
+    case ENCODER_MODE_PREREV: return "PREREV";
     case ENCODER_MODE_RPM:
-    default:                 return "RPM";
+    default:                  return "RPM";
   }
+}
+
+// --- Pure Logic: Determine pre-rev state from NC switch reading ---
+// NC switch wiring: closed at rest pulls pin LOW, opened pulls pin HIGH
+// via INPUT_PULLUP. Pre-rev is active when the switch is open (pin HIGH).
+bool isPreRevActive( bool pinHigh )
+{
+  return pinHigh;
 }
 
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
@@ -250,7 +278,7 @@ bool pollEncoderButton()
 }
 
 // --- Display Update (only redraws changed values to minimise I2C traffic) ---
-void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode )
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal )
 {
   if( mode != displayedMode )
   {
@@ -287,12 +315,33 @@ void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode enc
   {
     displayedEncoderMode = encMode;
   }
+
+  bool preRevRPMChanged = hasRPMChanged( displayedPreRevRPM, preRevRPMVal );
+
+  if( preRev != displayedPreRev || preRevRPMChanged || encModeChanged )
+  {
+    display.clearLine( 6 );
+    display.setCursor( 0, 6 );
+    display.print( encMode == ENCODER_MODE_PREREV ? ">" : " " );
+    display.print( "PRev:" );
+    if( preRev )
+    {
+      display.print( preRevRPMVal );
+    }
+    else
+    {
+      display.print( "OFF" );
+    }
+    displayedPreRev = preRev;
+    displayedPreRevRPM = preRevRPMVal;
+  }
 }
 
 // --- Setup ---
 void setup()
 {
   pinMode( PIN_TRIGGER, INPUT_PULLUP );
+  pinMode( PIN_PRE_REV, INPUT_PULLUP );
   pinMode( PIN_SELECT_1, INPUT_PULLUP );
   pinMode( PIN_SELECT_2, INPUT_PULLUP );
   pinMode( PIN_ENCODER_CLK, INPUT_PULLUP );
@@ -331,6 +380,8 @@ void setup()
   displayedRPM = 0;
   displayedBurstCount = 0;
   displayedEncoderMode = ENCODER_MODE_RPM;
+  displayedPreRev = false;
+  displayedPreRevRPM = 0;
 
   // Ensure the debounce period has already "elapsed" so the very first button
   // press in loop() registers immediately, regardless of how quickly setup() ran.
@@ -362,9 +413,22 @@ void loop()
         FlyshotSetNewMotorSpeed( motorRPM );
       }
     }
-    else
+    else if( encoderMode == ENCODER_MODE_BURST )
     {
       burstCount = calculateEncoderBurst( burstCount, encoderDir, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX );
+    }
+    else if( encoderMode == ENCODER_MODE_PREREV )
+    {
+      unsigned long newPreRevRPM = calculateEncoderPreRevRPM( preRevRPM, encoderDir, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX );
+      if( hasRPMChanged( preRevRPM, newPreRevRPM ) )
+      {
+        preRevRPM = newPreRevRPM;
+        // Update the idling speed immediately if currently idling
+        if( idling )
+        {
+          FlyshotSetNewMotorSpeed( preRevRPM );
+        }
+      }
     }
   }
 
@@ -373,22 +437,33 @@ void loop()
     digitalRead( PIN_SELECT_2 ) == LOW
   );
 
-  updateDisplay( mode, motorRPM, burstCount, encoderMode );
+  bool preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
+
+  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM );
 
   if( mode == FIRE_MODE_SAFETY )
   {
     NBCProcessFlywheelSpeed();
     FlyshotStopMotors();
+    idling = false;
     return;
   }
 
   while( digitalRead( PIN_TRIGGER ) == LOW )
   {
+    // Restore full target RPM when transitioning from idle to firing
+    if( preRevActive && idling )
+    {
+      idling = false;
+      FlyshotSetNewMotorSpeed( motorRPM );
+    }
+
     if( !FlyshotStartMotorsAndWait( MAX_WAIT_TIME ) )
     {
       FlyshotStopMotorsAndWait( MAX_WAIT_TIME );
       FlyshotBeep2( FLYSHOT_ESC_BOTH );
       NBCWait( 5000 );
+      idling = false;
       return;
     }
 
@@ -397,5 +472,20 @@ void loop()
   }
 
   NBCProcessFlywheelSpeed();
-  FlyshotStopMotors();
+
+  if( preRevActive )
+  {
+    // Drop governor to idle RPM, keep flywheels spinning
+    if( !idling )
+    {
+      FlyshotSetNewMotorSpeed( preRevRPM );
+      idling = true;
+    }
+    FlyshotStartMotors();
+  }
+  else
+  {
+    FlyshotStopMotors();
+    idling = false;
+  }
 }

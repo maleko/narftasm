@@ -6,9 +6,10 @@
 |---|---|
 | **SPST On-Off Toggle Switch** | Master power switch — cuts battery power to the board |
 | **4-Position 2-Pole Rotary Switch (2P4T)** | Selects fire mode (Safety / Single / Burst / Full Auto) |
-| **Trigger Microswitch** | Already installed — fires darts |
-| **KY-040 Rotary Encoder** | Adjusts flywheel RPM (3000–8000 in 250 RPM steps) |
-| **0.96" I2C SSD1306 OLED** (128×64, 5V tolerant) | Displays current fire mode and RPM |
+| **Trigger Microswitch** | Already installed — fires darts (wired NO) |
+| **Rev Microswitch** | Pre-rev toggle — keeps flywheels idling at low RPM (wired NC) |
+| **KY-040 Rotary Encoder** | Adjusts parameters — button cycles: RPM → Burst → Pre-Rev |
+| **0.96" I2C SSD1306 OLED** (128×64, 5V tolerant) | Displays fire mode, RPM, burst count, and pre-rev status |
 | **Hook-up wire** | 22–26 AWG signal wire |
 
 ## Select Fire Switch Type
@@ -44,6 +45,7 @@ graph TD
         D6["D6 — PIN_TRIGGER"]
         D11["D11 — PIN_ENCODER_DT"]
         D12["D12 — PIN_ENCODER_SW"]
+        A1["A1 — PIN_PRE_REV"]
         A4["A4 — SDA"]
         A5["A5 — SCL"]
         VCC["5V"]
@@ -60,9 +62,14 @@ graph TD
         P2_3["Pole B — Pos 4 (Full Auto)"]
     end
 
-    subgraph TRIG["Trigger Microswitch"]
+    subgraph TRIG["Trigger Microswitch (NO)"]
         TC["Common"]
         TNO["Normally Open"]
+    end
+
+    subgraph REV["Rev Microswitch (NC)"]
+        RC["Common"]
+        RNC["Normally Closed"]
     end
 
     subgraph ENC["KY-040 Rotary Encoder"]
@@ -94,6 +101,9 @@ graph TD
     TC -->|"wire"| D6
     TNO -->|"wire"| GND
 
+    RC -->|"wire"| A1
+    RNC -->|"wire"| GND
+
     ECLK -->|"wire"| D4
     EDT -->|"wire"| D11
     ESW -->|"wire"| D12
@@ -110,6 +120,8 @@ graph TD
     style NBC fill:#1a3a5c,stroke:#4a8eff,color:#ffffff
     style SW fill:#5c3a1a,stroke:#ffb236,color:#ffffff
     style TRIG fill:#3a5c1a,stroke:#30b570,color:#ffffff
+    style REV fill:#3a5c1a,stroke:#30b570,color:#ffffff
+    style A1 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style ENC fill:#1a5c3a,stroke:#36ff72,color:#ffffff
     style OLED fill:#5c1a3a,stroke:#ff3672,color:#ffffff
     style D2 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
@@ -134,12 +146,13 @@ graph TD
 | **D3** | Rotary switch — Pole B Common |
 | **D4** | Rotary encoder — CLK |
 | **D6** | Trigger microswitch — Common |
+| **A1** | Rev microswitch — Common |
 | **D11** | Rotary encoder — DT |
 | **D12** | Rotary encoder — SW (push button) |
 | **A4** | OLED — SDA |
 | **A5** | OLED — SCL |
 | **5V** | Rotary encoder VCC, OLED VCC |
-| **GND** | Rotary switch terminals, Trigger NO, Encoder GND, OLED GND |
+| **GND** | Rotary switch terminals, Trigger NO, Rev NC, Encoder GND, OLED GND |
 
 ## Fire Mode Truth Table
 
@@ -174,6 +187,11 @@ The 2P4T rotary switch has 2 poles (A and B), each with a common pin and
   off, no power reaches the board. Use a switch rated for your battery
   voltage and current (e.g. 20A for a 4S LiPo).
 - All select pins use `INPUT_PULLUP` — no external resistors needed.
-- Switches connect pins to **GND** to pull them LOW (active).
+- The **trigger microswitch** uses the **Normally Open (NO)** terminal.
+  At rest the pin is HIGH (pullup); pressing the trigger closes the
+  circuit to GND, pulling the pin LOW.
+- The **rev microswitch** uses the **Normally Closed (NC)** terminal.
+  At rest the pin is LOW (closed to GND); activating the switch opens
+  the circuit, and the pullup pulls the pin HIGH to enable pre-rev.
 - When a pin is not connected to GND, the internal pull-up holds it HIGH.
 - Refer to `NBC-Pinout.png` for physical pad locations on your board.
