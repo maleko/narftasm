@@ -330,6 +330,10 @@ void setup()
   displayedRPM = 0;
   displayedBurstCount = 0;
   displayedEncoderMode = ENCODER_MODE_RPM;
+
+  // Ensure the debounce period has already "elapsed" so the very first button
+  // press in loop() registers immediately, regardless of how quickly setup() ran.
+  lastButtonDebounceTime = millis() - ( BUTTON_DEBOUNCE_MS + 1 );
 }
 
 // --- Main Loop ---
