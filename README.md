@@ -39,6 +39,8 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 
 See [Phantasm-Wiring-Diagram.md](Phantasm-Wiring-Diagram.md) for full wiring
 details, truth tables, and terminal-level connection instructions.
+See [Phantasm-IEC60617-Schematic.md](Phantasm-IEC60617-Schematic.md) for
+the IEC 60617 schematic with wire schedule and signal logic summary.
 
 ## Dependencies
 
@@ -56,4 +58,5 @@ details, truth tables, and terminal-level connection instructions.
 | `test_fire_modes.ino` | Test sketch (upload to Arduino, check Serial output) |
 | `NBC.h` | NBC board library |
 | `Phantasm-Wiring-Diagram.md` | Wiring diagram and truth tables |
+| `Phantasm-IEC60617-Schematic.md` | IEC 60617 schematic with wire schedule |
 | `NBC-Pinout.png` | Board pinout reference |
