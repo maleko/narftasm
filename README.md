@@ -1,7 +1,9 @@
-# Phantasm — Brushless Foam Dart Blaster
+# Narftasm — Brushless Foam Dart Blaster
 
-Custom firmware for a foam dart blaster built on the
+Custom firmware for a Phantasm based foam dart blaster built on the
 [Narfduino Brushless Compleat (NBC)](https://blastersbyairzone.com/narfduino/) board.
+
+Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Phantasm. 
 
 ## Features
 
@@ -37,7 +39,9 @@ details, truth tables, and terminal-level connection instructions.
 
 - **NBC.h** — Narfduino Brushless Compleat library (included)
 - **U8g2** — Install via Arduino IDE: *Sketch → Include Library → Manage
-  Libraries → search "U8g2"*
+  Libraries → search "U8g2"
+- **Minicore** — Add the [Minicore](https://mcudude.github.io/MiniCore/package_MCUdude_MiniCore_index.json) to the additional board manager URLS in Arduino Options and install Minicore in the board manager menu
+  - Select Board | Minicore | atmega328
 
 ## Files
 
