@@ -369,14 +369,14 @@ void testCalculateEncoderBurstNoDirection()
 
 void testIsMp5SlapSafeWhenBoltLocked()
 {
-  // NO switch: at rest (bolt locked) pin is HIGH (open to GND) via INPUT_PULLUP = safe.
-  assertBool( "isMp5SlapSafe: pin HIGH (bolt locked) returns true", true, isMp5SlapSafe( true ) );
+  // NC switch: at rest (bolt locked) pin is LOW (closed to GND) = safe.
+  assertBool( "isMp5SlapSafe: pin LOW (bolt locked) returns true", true, isMp5SlapSafe( false ) );
 }
 
 void testIsMp5SlapUnsafeWhenBoltOpen()
 {
-  // NO switch: bolt open closes circuit to GND, pin LOW = unsafe.
-  assertBool( "isMp5SlapSafe: pin LOW (bolt open) returns false", false, isMp5SlapSafe( false ) );
+  // NC switch: bolt open breaks circuit, pullup pulls pin HIGH = unsafe.
+  assertBool( "isMp5SlapSafe: pin HIGH (bolt open) returns false", false, isMp5SlapSafe( true ) );
 }
 
 // ---- Pre-Rev Tests ----
@@ -540,7 +540,7 @@ bool isPreRevActive( bool pinHigh )
 
 bool isMp5SlapSafe( bool pinHigh )
 {
-  return pinHigh;
+  return !pinHigh;
 }
 
 void setup()

@@ -8,7 +8,7 @@
 | **4-Position 2-Pole Rotary Switch (2P4T)** | Selects fire mode (Safety / Single / Burst / Full Auto) |
 | **Trigger Microswitch** | Already installed — fires darts (wired NO) |
 | **Rev Microswitch** | Pre-rev toggle — keeps flywheels idling at low RPM (wired NC) |
-| **MP5 Slap Microswitch** | Bolt-lock safety — prevents firing when bolt is open (wired NO) |
+| **MP5 Slap Microswitch** | Bolt-lock safety — prevents firing when bolt is open (wired NC) |
 | **KY-040 Rotary Encoder** | Adjusts parameters — button cycles: RPM → Burst → Pre-Rev |
 | **0.96" I2C SSD1306 OLED** (128×64, 5V tolerant) | Displays fire mode, RPM, burst count, and pre-rev status |
 | **Hook-up wire** | 22–26 AWG signal wire |
@@ -74,9 +74,9 @@ graph TD
         RNC["Normally Closed"]
     end
 
-    subgraph MP5["MP5 Slap Microswitch (NO)"]
+    subgraph MP5["MP5 Slap Microswitch (NC)"]
         MC["Common"]
-        MNO["Normally Open"]
+        MNC["Normally Closed"]
     end
 
     subgraph ENC["KY-040 Rotary Encoder"]
@@ -112,7 +112,7 @@ graph TD
     RNC -->|"wire"| GND
 
     MC -->|"wire"| A2
-    MNO -->|"wire"| GND
+    MNC -->|"wire"| GND
 
     ECLK -->|"wire"| D4
     EDT -->|"wire"| D11
@@ -165,7 +165,7 @@ graph TD
 | **A4** | OLED — SDA |
 | **A5** | OLED — SCL |
 | **5V** | Rotary encoder VCC, OLED VCC |
-| **GND** | Rotary switch terminals, Trigger NO, Rev NC, MP5 Slap NO, Encoder GND, OLED GND |
+| **GND** | Rotary switch terminals, Trigger NO, Rev NC, MP5 Slap NC, Encoder GND, OLED GND |
 
 ## Fire Mode Truth Table
 
@@ -206,9 +206,9 @@ The 2P4T rotary switch has 2 poles (A and B), each with a common pin and
 - The **rev microswitch** uses the **Normally Closed (NC)** terminal.
   At rest the pin is LOW (closed to GND); activating the switch opens
   the circuit, and the pullup pulls the pin HIGH to enable pre-rev.
-- The **MP5 slap microswitch** uses the **Normally Open (NO)** terminal.
-  At rest (bolt locked) the pin is HIGH (pullup); when the bolt is open
-  the switch closes to GND, pulling the pin LOW. Firing is disabled
-  whenever the pin reads LOW.
+- The **MP5 slap microswitch** uses the **Normally Closed (NC)** terminal.
+  At rest (bolt locked) the pin is LOW (closed to GND); when the bolt is
+  open the switch opens and the pullup pulls the pin HIGH. Firing is
+  disabled whenever the pin reads HIGH.
 - When a pin is not connected to GND, the internal pull-up holds it HIGH.
 - Refer to `NBC-Pinout.png` for physical pad locations on your board.

@@ -180,12 +180,12 @@ bool isPreRevActive( bool pinHigh )
   return pinHigh;
 }
 
-// --- Pure Logic: Determine MP5 slap safety state from NO switch reading ---
-// NO switch wiring: open at rest (bolt locked) holds pin HIGH via INPUT_PULLUP.
-// When bolt is open the switch closes to GND, pulling the pin LOW = unsafe.
+// --- Pure Logic: Determine MP5 slap safety state from NC switch reading ---
+// NC switch wiring: closed at rest (bolt locked) pulls pin LOW via GND.
+// When bolt is open the switch opens and the pullup pulls pin HIGH = unsafe.
 bool isMp5SlapSafe( bool pinHigh )
 {
-  return pinHigh;
+  return !pinHigh;
 }
 
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
