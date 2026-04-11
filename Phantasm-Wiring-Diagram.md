@@ -8,6 +8,7 @@
 | **4-Position 2-Pole Rotary Switch (2P4T)** | Selects fire mode (Safety / Single / Burst / Full Auto) |
 | **Trigger Microswitch** | Already installed — fires darts (wired NO) |
 | **Rev Microswitch** | Pre-rev toggle — keeps flywheels idling at low RPM (wired NC) |
+| **MP5 Slap Microswitch** | Bolt-lock safety — prevents firing when bolt is open (wired NO) |
 | **KY-040 Rotary Encoder** | Adjusts parameters — button cycles: RPM → Burst → Pre-Rev |
 | **0.96" I2C SSD1306 OLED** (128×64, 5V tolerant) | Displays fire mode, RPM, burst count, and pre-rev status |
 | **Hook-up wire** | 22–26 AWG signal wire |
@@ -43,6 +44,7 @@ graph TD
         D3["D3 — PIN_SELECT_2"]
         D4["D4 — PIN_ENCODER_CLK"]
         D6["D6 — PIN_TRIGGER"]
+        A2["A2 — PIN_MP5_SLAP"]
         D11["D11 — PIN_ENCODER_DT"]
         D12["D12 — PIN_ENCODER_SW"]
         A1["A1 — PIN_PRE_REV"]
@@ -70,6 +72,11 @@ graph TD
     subgraph REV["Rev Microswitch (NC)"]
         RC["Common"]
         RNC["Normally Closed"]
+    end
+
+    subgraph MP5["MP5 Slap Microswitch (NO)"]
+        MC["Common"]
+        MNO["Normally Open"]
     end
 
     subgraph ENC["KY-040 Rotary Encoder"]
@@ -104,6 +111,9 @@ graph TD
     RC -->|"wire"| A1
     RNC -->|"wire"| GND
 
+    MC -->|"wire"| A2
+    MNO -->|"wire"| GND
+
     ECLK -->|"wire"| D4
     EDT -->|"wire"| D11
     ESW -->|"wire"| D12
@@ -121,7 +131,9 @@ graph TD
     style SW fill:#5c3a1a,stroke:#ffb236,color:#ffffff
     style TRIG fill:#3a5c1a,stroke:#30b570,color:#ffffff
     style REV fill:#3a5c1a,stroke:#30b570,color:#ffffff
+    style MP5 fill:#3a5c1a,stroke:#30b570,color:#ffffff
     style A1 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
+    style A2 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style ENC fill:#1a5c3a,stroke:#36ff72,color:#ffffff
     style OLED fill:#5c1a3a,stroke:#ff3672,color:#ffffff
     style D2 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
@@ -147,12 +159,13 @@ graph TD
 | **D4** | Rotary encoder — CLK |
 | **D6** | Trigger microswitch — Common |
 | **A1** | Rev microswitch — Common |
+| **A2** | MP5 slap microswitch — Common |
 | **D11** | Rotary encoder — DT |
 | **D12** | Rotary encoder — SW (push button) |
 | **A4** | OLED — SDA |
 | **A5** | OLED — SCL |
 | **5V** | Rotary encoder VCC, OLED VCC |
-| **GND** | Rotary switch terminals, Trigger NO, Rev NC, Encoder GND, OLED GND |
+| **GND** | Rotary switch terminals, Trigger NO, Rev NC, MP5 Slap NO, Encoder GND, OLED GND |
 
 ## Fire Mode Truth Table
 
@@ -193,5 +206,9 @@ The 2P4T rotary switch has 2 poles (A and B), each with a common pin and
 - The **rev microswitch** uses the **Normally Closed (NC)** terminal.
   At rest the pin is LOW (closed to GND); activating the switch opens
   the circuit, and the pullup pulls the pin HIGH to enable pre-rev.
+- The **MP5 slap microswitch** uses the **Normally Open (NO)** terminal.
+  At rest (bolt locked) the pin is HIGH (pullup); when the bolt is open
+  the switch closes to GND, pulling the pin LOW. Firing is disabled
+  whenever the pin reads LOW.
 - When a pin is not connected to GND, the internal pull-up holds it HIGH.
 - Refer to `NBC-Pinout.png` for physical pad locations on your board.

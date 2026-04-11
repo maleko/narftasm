@@ -41,6 +41,7 @@ int clampBurstCount( int count, int minCount, int maxCount );
 int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount );
 const char* getEncoderModeLabel( EncoderMode mode );
 bool isPreRevActive( bool pinHigh );
+bool isMp5SlapSafe( bool pinHigh );
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 
 // ---- Test harness ----
@@ -364,6 +365,20 @@ void testCalculateEncoderBurstNoDirection()
     calculateEncoderBurst( 3, 0, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX ) );
 }
 
+// ---- MP5 Slap Safety Tests ----
+
+void testIsMp5SlapSafeWhenBoltLocked()
+{
+  // NO switch: at rest (bolt locked) pin is HIGH (open to GND) via INPUT_PULLUP = safe.
+  assertBool( "isMp5SlapSafe: pin HIGH (bolt locked) returns true", true, isMp5SlapSafe( true ) );
+}
+
+void testIsMp5SlapUnsafeWhenBoltOpen()
+{
+  // NO switch: bolt open closes circuit to GND, pin LOW = unsafe.
+  assertBool( "isMp5SlapSafe: pin LOW (bolt open) returns false", false, isMp5SlapSafe( false ) );
+}
+
 // ---- Pre-Rev Tests ----
 
 void testIsPreRevActiveWhenSwitchOpen()
@@ -523,6 +538,11 @@ bool isPreRevActive( bool pinHigh )
   return pinHigh;
 }
 
+bool isMp5SlapSafe( bool pinHigh )
+{
+  return pinHigh;
+}
+
 void setup()
 {
   Serial.begin( 115200 );
@@ -561,6 +581,10 @@ void setup()
   // RPM changed tests
   testHasRPMChangedTrue();
   testHasRPMChangedFalse();
+
+  // MP5 slap safety tests
+  testIsMp5SlapSafeWhenBoltLocked();
+  testIsMp5SlapUnsafeWhenBoltOpen();
 
   // Pre-rev tests
   testIsPreRevActiveWhenSwitchOpen();
