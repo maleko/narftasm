@@ -484,6 +484,16 @@ void loop()
 
   while( digitalRead( PIN_TRIGGER ) == LOW )
   {
+    // Re-check MP5 slap safety each iteration so the safety gate
+    // takes effect immediately if the bolt opens mid-hold
+    if( !isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH ) )
+    {
+      NBCProcessFlywheelSpeed();
+      FlyshotStopMotors();
+      idling = false;
+      return;
+    }
+
     // Restore full target RPM when transitioning from idle to firing
     if( preRevActive && idling )
     {
