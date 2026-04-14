@@ -38,7 +38,7 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 
 See [Phantasm-Wiring-Diagram.md](Phantasm-Wiring-Diagram.md) for full wiring
 details, truth tables, and terminal-level connection instructions.
-See [Phantasm-IEC60617-Schematic.md](Phantasm-IEC60617-Schematic.md) for
+See [Phantasm-IEC60617-Schematic.svg](Phantasm-IEC60617-Schematic.svg) for
 the IEC 60617 schematic with wire schedule and signal logic summary.
 
 ## Dependencies
