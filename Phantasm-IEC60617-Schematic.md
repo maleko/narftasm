@@ -10,7 +10,7 @@ IEC 60617.
 | **G1** | Battery cell | 4S LiPo battery pack | +, − |
 | **Q1** | Switch, SPST | Master power on-off toggle switch | 1, 2 |
 | **A1** | Assembly | Narfduino Brushless Compleat (ATmega328P) | B+, B−, D2–D12, A0–A5, 5V, GND |
-| **S1** | Rotary switch, 2P4T | Fire mode selector | Pole A (C, 1–4), Pole B (C, 1–4) |
+| **S1** | Slide switch, 2P3T | Fire mode selector | Pole A (C, 1–3), Pole B (C, 1–3) |
 | **S2** | Switch, NO | Trigger microswitch | C, NO |
 | **S3** | Switch, NC | Rev (pre-rev) microswitch | C, NC |
 | **S4** | Switch, NC | MP5 slap (bolt-lock safety) microswitch | C, NC |
@@ -48,13 +48,13 @@ graph LR
         A1_GND["GND"]
     end
 
-    subgraph S1["S1 — 2P4T Rotary Switch"]
+    subgraph S1["S1 — 2P3T Slide Switch"]
         S1_AC["Pole A C"]
-        S1_A2["Pole A Pos 2"]
-        S1_A4["Pole A Pos 4"]
+        S1_A1["Pole A Pos 1"]
+        S1_A3["Pole A Pos 3"]
         S1_BC["Pole B C"]
+        S1_B2["Pole B Pos 2"]
         S1_B3["Pole B Pos 3"]
-        S1_B4["Pole B Pos 4"]
     end
 
     subgraph S2["S2 — Trigger (NO)"]
@@ -93,10 +93,10 @@ graph LR
 
     S1_AC -->|"W4"| A1_D2
     S1_BC -->|"W5"| A1_D3
-    S1_A2 -->|"W6"| A1_GND
-    S1_A4 -->|"W7"| A1_GND
-    S1_B3 -->|"W8"| A1_GND
-    S1_B4 -->|"W9"| A1_GND
+    S1_A1 -->|"W6"| A1_GND
+    S1_A3 -->|"W7"| A1_GND
+    S1_B2 -->|"W8"| A1_GND
+    S1_B3 -->|"W9"| A1_GND
 
     S2_C -->|"W10"| A1_D6
     S2_NO -->|"W11"| A1_GND
@@ -138,10 +138,10 @@ graph LR
 | W3 | G1 − | A1 B− | Battery negative direct |
 | W4 | S1 Pole A C | A1 D2 | Select 1 signal |
 | W5 | S1 Pole B C | A1 D3 | Select 2 signal |
-| W6 | S1 Pole A Pos 2 | A1 GND | Single shot select |
-| W7 | S1 Pole A Pos 4 | A1 GND | Full auto select (A) |
-| W8 | S1 Pole B Pos 3 | A1 GND | Burst select |
-| W9 | S1 Pole B Pos 4 | A1 GND | Full auto select (B) |
+| W6 | S1 Pole A Pos 1 | A1 GND | Single shot select |
+| W7 | S1 Pole A Pos 3 | A1 GND | Full auto select (A) |
+| W8 | S1 Pole B Pos 2 | A1 GND | Burst select |
+| W9 | S1 Pole B Pos 3 | A1 GND | Full auto select (B) |
 | W10 | S2 C | A1 D6 | Trigger signal |
 | W11 | S2 NO | A1 GND | Trigger return |
 | W12 | S3 C | A1 A1 | Pre-rev signal |
@@ -162,7 +162,7 @@ graph LR
 
 | Ref | Type | At Rest | Activated | A1 Pin | Logic |
 |---|---|---|---|---|---|
-| S1 | 2P4T | Open (HIGH) | Closed to GND (LOW) | D2, D3 | 2-bit binary fire mode encoding |
+| S1 | 2P3T | Open (HIGH) | Closed to GND (LOW) | D2, D3 | 2-bit binary fire mode encoding |
 | S2 | NO | Open (HIGH) | Closed to GND (LOW) | D6 | LOW = trigger pressed |
 | S3 | NC | Closed to GND (LOW) | Open (HIGH) | A1 | HIGH = pre-rev active |
 | S4 | NC | Closed to GND (LOW) | Open (HIGH) | A2 | HIGH = bolt open (unsafe) |

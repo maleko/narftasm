@@ -4,7 +4,6 @@
 
 // ---- Fire mode enum (must match implementation) ----
 enum FireMode {
-  FIRE_MODE_SAFETY,
   FIRE_MODE_SINGLE,
   FIRE_MODE_BURST,
   FIRE_MODE_FULL_AUTO
@@ -42,6 +41,7 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
 const char* getEncoderModeLabel( EncoderMode mode );
 bool isPreRevActive( bool pinHigh );
 bool isMp5SlapSafe( bool pinHigh );
+const char* getDisplayModeLabel( FireMode mode, bool safe );
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 
 // ---- Test harness ----
@@ -131,28 +131,29 @@ void assertBool( const char* testName, bool expected, bool actual )
 
 // ---- Tests ----
 
-void testGetFireModeSafety()
-{
-  // Rotary switch position 1: both pins HIGH = safety
-  assertEq( "Pos 1 Safety: sel1=HIGH sel2=HIGH", FIRE_MODE_SAFETY, getFireMode( false, false ) );
-}
-
 void testGetFireModeSingleShot()
 {
-  // Rotary switch position 2: SELECT_1 LOW, SELECT_2 HIGH = single
-  assertEq( "Pos 2 Single: sel1=LOW sel2=HIGH", FIRE_MODE_SINGLE, getFireMode( true, false ) );
+  // Slide switch position 1: SELECT_1 LOW, SELECT_2 HIGH = single
+  assertEq( "Pos 1 Single: sel1=LOW sel2=HIGH", FIRE_MODE_SINGLE, getFireMode( true, false ) );
 }
 
 void testGetFireModeBurst()
 {
-  // Rotary switch position 3: SELECT_1 HIGH, SELECT_2 LOW = burst
-  assertEq( "Pos 3 Burst: sel1=HIGH sel2=LOW", FIRE_MODE_BURST, getFireMode( false, true ) );
+  // Slide switch position 2: SELECT_1 HIGH, SELECT_2 LOW = burst
+  assertEq( "Pos 2 Burst: sel1=HIGH sel2=LOW", FIRE_MODE_BURST, getFireMode( false, true ) );
 }
 
 void testGetFireModeFullAuto()
 {
-  // Rotary switch position 4: both pins LOW = full auto
-  assertEq( "Pos 4 Full Auto: sel1=LOW sel2=LOW", FIRE_MODE_FULL_AUTO, getFireMode( true, true ) );
+  // Slide switch position 3: both pins LOW = full auto
+  assertEq( "Pos 3 Full Auto: sel1=LOW sel2=LOW", FIRE_MODE_FULL_AUTO, getFireMode( true, true ) );
+}
+
+void testGetFireModeFallback()
+{
+  // HIGH/HIGH cannot occur with a properly wired 3-position slide switch,
+  // but defaults to SINGLE as the safest fallback.
+  assertEq( "Fallback: sel1=HIGH sel2=HIGH defaults to SINGLE", FIRE_MODE_SINGLE, getFireMode( false, false ) );
 }
 
 void testBurstCountIsThree()
@@ -181,10 +182,9 @@ void testSingleShotEdgeDetection()
 void testFireModeEnumValues()
 {
   // Verify enum ordering for sanity
-  assertEq( "FIRE_MODE_SAFETY is 0", 0, FIRE_MODE_SAFETY );
-  assertEq( "FIRE_MODE_SINGLE is 1", 1, FIRE_MODE_SINGLE );
-  assertEq( "FIRE_MODE_BURST is 2", 2, FIRE_MODE_BURST );
-  assertEq( "FIRE_MODE_FULL_AUTO is 3", 3, FIRE_MODE_FULL_AUTO );
+  assertEq( "FIRE_MODE_SINGLE is 0", 0, FIRE_MODE_SINGLE );
+  assertEq( "FIRE_MODE_BURST is 1", 1, FIRE_MODE_BURST );
+  assertEq( "FIRE_MODE_FULL_AUTO is 2", 2, FIRE_MODE_FULL_AUTO );
 }
 
 // ---- RPM Clamping Tests ----
@@ -244,11 +244,6 @@ void testCalculateEncoderRPMNoDirection()
 
 // ---- Fire Mode Label Tests ----
 
-void testGetFireModeLabelSafety()
-{
-  assertStrEq( "getFireModeLabel: safety", "SAFETY", getFireModeLabel( FIRE_MODE_SAFETY ) );
-}
-
 void testGetFireModeLabelSingle()
 {
   assertStrEq( "getFireModeLabel: single", "SINGLE", getFireModeLabel( FIRE_MODE_SINGLE ) );
@@ -262,6 +257,38 @@ void testGetFireModeLabelBurst()
 void testGetFireModeLabelFullAuto()
 {
   assertStrEq( "getFireModeLabel: full auto", "FULL AUTO", getFireModeLabel( FIRE_MODE_FULL_AUTO ) );
+}
+
+// ---- Display Mode Label Tests (safe override) ----
+
+void testGetDisplayModeLabelSafeOverridesSingle()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides SINGLE", "SAFE", getDisplayModeLabel( FIRE_MODE_SINGLE, true ) );
+}
+
+void testGetDisplayModeLabelSafeOverridesBurst()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides BURST", "SAFE", getDisplayModeLabel( FIRE_MODE_BURST, true ) );
+}
+
+void testGetDisplayModeLabelSafeOverridesFullAuto()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides FULL AUTO", "SAFE", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, true ) );
+}
+
+void testGetDisplayModeLabelUnsafeSingle()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows SINGLE", "SINGLE", getDisplayModeLabel( FIRE_MODE_SINGLE, false ) );
+}
+
+void testGetDisplayModeLabelUnsafeBurst()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows BURST", "BURST", getDisplayModeLabel( FIRE_MODE_BURST, false ) );
+}
+
+void testGetDisplayModeLabelUnsafeFullAuto()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows FULL AUTO", "FULL AUTO", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, false ) );
 }
 
 // ---- RPM Changed Tests ----
@@ -455,13 +482,11 @@ void testBurstCountDefault()
 
 FireMode getFireMode( bool select1Low, bool select2Low )
 {
-  if( select1Low && !select2Low )
-    return FIRE_MODE_SINGLE;
   if( !select1Low && select2Low )
     return FIRE_MODE_BURST;
   if( select1Low && select2Low )
     return FIRE_MODE_FULL_AUTO;
-  return FIRE_MODE_SAFETY;
+  return FIRE_MODE_SINGLE;
 }
 
 unsigned long clampRPM( long rpm, unsigned long minRPM, unsigned long maxRPM )
@@ -481,12 +506,18 @@ const char* getFireModeLabel( FireMode mode )
 {
   switch( mode )
   {
-    case FIRE_MODE_SINGLE:    return "SINGLE";
     case FIRE_MODE_BURST:     return "BURST";
     case FIRE_MODE_FULL_AUTO: return "FULL AUTO";
-    case FIRE_MODE_SAFETY:
-    default:                  return "SAFETY";
+    case FIRE_MODE_SINGLE:
+    default:                  return "SINGLE";
   }
+}
+
+const char* getDisplayModeLabel( FireMode mode, bool safe )
+{
+  if( safe )
+    return "SAFE";
+  return getFireModeLabel( mode );
 }
 
 bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
@@ -552,10 +583,10 @@ void setup()
 
   // Fire mode tests
   testFireModeEnumValues();
-  testGetFireModeSafety();
   testGetFireModeSingleShot();
   testGetFireModeBurst();
   testGetFireModeFullAuto();
+  testGetFireModeFallback();
   testBurstCountIsThree();
   testSingleShotEdgeDetection();
 
@@ -573,10 +604,17 @@ void setup()
   testCalculateEncoderRPMNoDirection();
 
   // Fire mode label tests
-  testGetFireModeLabelSafety();
   testGetFireModeLabelSingle();
   testGetFireModeLabelBurst();
   testGetFireModeLabelFullAuto();
+
+  // Display mode label tests (safe override)
+  testGetDisplayModeLabelSafeOverridesSingle();
+  testGetDisplayModeLabelSafeOverridesBurst();
+  testGetDisplayModeLabelSafeOverridesFullAuto();
+  testGetDisplayModeLabelUnsafeSingle();
+  testGetDisplayModeLabelUnsafeBurst();
+  testGetDisplayModeLabelUnsafeFullAuto();
 
   // RPM changed tests
   testHasRPMChangedTrue();
