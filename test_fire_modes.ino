@@ -41,6 +41,7 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
 const char* getEncoderModeLabel( EncoderMode mode );
 bool isPreRevActive( bool pinHigh );
 bool isMp5SlapSafe( bool pinHigh );
+const char* getDisplayModeLabel( FireMode mode, bool safe );
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 
 // ---- Test harness ----
@@ -256,6 +257,38 @@ void testGetFireModeLabelBurst()
 void testGetFireModeLabelFullAuto()
 {
   assertStrEq( "getFireModeLabel: full auto", "FULL AUTO", getFireModeLabel( FIRE_MODE_FULL_AUTO ) );
+}
+
+// ---- Display Mode Label Tests (safe override) ----
+
+void testGetDisplayModeLabelSafeOverridesSingle()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides SINGLE", "SAFE", getDisplayModeLabel( FIRE_MODE_SINGLE, true ) );
+}
+
+void testGetDisplayModeLabelSafeOverridesBurst()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides BURST", "SAFE", getDisplayModeLabel( FIRE_MODE_BURST, true ) );
+}
+
+void testGetDisplayModeLabelSafeOverridesFullAuto()
+{
+  assertStrEq( "getDisplayModeLabel: safe overrides FULL AUTO", "SAFE", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, true ) );
+}
+
+void testGetDisplayModeLabelUnsafeSingle()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows SINGLE", "SINGLE", getDisplayModeLabel( FIRE_MODE_SINGLE, false ) );
+}
+
+void testGetDisplayModeLabelUnsafeBurst()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows BURST", "BURST", getDisplayModeLabel( FIRE_MODE_BURST, false ) );
+}
+
+void testGetDisplayModeLabelUnsafeFullAuto()
+{
+  assertStrEq( "getDisplayModeLabel: unsafe shows FULL AUTO", "FULL AUTO", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, false ) );
 }
 
 // ---- RPM Changed Tests ----
@@ -480,6 +513,13 @@ const char* getFireModeLabel( FireMode mode )
   }
 }
 
+const char* getDisplayModeLabel( FireMode mode, bool safe )
+{
+  if( safe )
+    return "SAFE";
+  return getFireModeLabel( mode );
+}
+
 bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
 {
   return oldRPM != newRPM;
@@ -567,6 +607,14 @@ void setup()
   testGetFireModeLabelSingle();
   testGetFireModeLabelBurst();
   testGetFireModeLabelFullAuto();
+
+  // Display mode label tests (safe override)
+  testGetDisplayModeLabelSafeOverridesSingle();
+  testGetDisplayModeLabelSafeOverridesBurst();
+  testGetDisplayModeLabelSafeOverridesFullAuto();
+  testGetDisplayModeLabelUnsafeSingle();
+  testGetDisplayModeLabelUnsafeBurst();
+  testGetDisplayModeLabelUnsafeFullAuto();
 
   // RPM changed tests
   testHasRPMChangedTrue();

@@ -59,6 +59,7 @@ unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
 FireMode displayedMode = FIRE_MODE_SINGLE;
 EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
+bool displayedSafe = false;
 bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
 int lastEncoderCLK = HIGH;
@@ -103,6 +104,14 @@ const char* getFireModeLabel( FireMode mode )
     case FIRE_MODE_SINGLE:
     default:                  return "SINGLE";
   }
+}
+
+// --- Pure Logic: Get display label, overridden to "SAFE" when bolt is open ---
+const char* getDisplayModeLabel( FireMode mode, bool safe )
+{
+  if( safe )
+    return "SAFE";
+  return getFireModeLabel( mode );
 }
 
 // --- Pure Logic: Check if RPM has changed ---
@@ -281,14 +290,15 @@ bool pollEncoderButton()
 }
 
 // --- Display Update (only redraws changed values to minimise I2C traffic) ---
-void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal )
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal, bool safe )
 {
-  if( mode != displayedMode )
+  if( mode != displayedMode || safe != displayedSafe )
   {
     display.clearLine( 0 );
     display.setCursor( 0, 0 );
-    display.print( getFireModeLabel( mode ) );
+    display.print( getDisplayModeLabel( mode, safe ) );
     displayedMode = mode;
+    displayedSafe = safe;
   }
 
   bool rpmChanged = hasRPMChanged( displayedRPM, rpm );
@@ -381,6 +391,7 @@ void setup()
 
   display.clear();
   displayedMode = FIRE_MODE_SINGLE;
+  displayedSafe = false;
   displayedRPM = 0;
   displayedBurstCount = 0;
   displayedEncoderMode = ENCODER_MODE_RPM;
@@ -446,10 +457,9 @@ void loop()
   );
 
   bool preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
-
-  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM );
-
   bool mp5SlapSafe = isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH );
+
+  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM, !mp5SlapSafe );
 
   if( !mp5SlapSafe )
   {
