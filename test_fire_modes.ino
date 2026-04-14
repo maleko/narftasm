@@ -1,5 +1,5 @@
-// Test sketch for Phantasm logic
-// TDD: These tests should FAIL before implementation, then PASS after.
+// Test sketch for current Phantasm logic.
+// Mirrors the root sketch's 3-position 2P3T fire selector logic.
 // Upload to an Arduino to run. Results output via Serial.
 
 // ---- Fire mode enum (must match implementation) ----
@@ -151,9 +151,9 @@ void testGetFireModeFullAuto()
 
 void testGetFireModeFallback()
 {
-  // HIGH/HIGH cannot occur with a properly wired 3-position slide switch,
-  // but defaults to SINGLE as the safest fallback.
-  assertEq( "Fallback: sel1=HIGH sel2=HIGH defaults to SINGLE", FIRE_MODE_SINGLE, getFireMode( false, false ) );
+  // HIGH/HIGH should not occur with a properly wired 3-position slide switch,
+  // but the current sketch falls back to SINGLE if it does.
+  assertEq( "Fallback wiring state: sel1=HIGH sel2=HIGH -> SINGLE", FIRE_MODE_SINGLE, getFireMode( false, false ) );
 }
 
 void testBurstCountIsThree()
@@ -259,36 +259,36 @@ void testGetFireModeLabelFullAuto()
   assertStrEq( "getFireModeLabel: full auto", "FULL AUTO", getFireModeLabel( FIRE_MODE_FULL_AUTO ) );
 }
 
-// ---- Display Mode Label Tests (safe override) ----
+// ---- Display Mode Label Tests (MP5 safety override) ----
 
-void testGetDisplayModeLabelSafeOverridesSingle()
+void testGetDisplayModeLabelSafetyOverrideSingle()
 {
-  assertStrEq( "getDisplayModeLabel: safe overrides SINGLE", "SAFE", getDisplayModeLabel( FIRE_MODE_SINGLE, true ) );
+  assertStrEq( "getDisplayModeLabel: MP5 safety override shows SAFE for SINGLE", "SAFE", getDisplayModeLabel( FIRE_MODE_SINGLE, true ) );
 }
 
-void testGetDisplayModeLabelSafeOverridesBurst()
+void testGetDisplayModeLabelSafetyOverrideBurst()
 {
-  assertStrEq( "getDisplayModeLabel: safe overrides BURST", "SAFE", getDisplayModeLabel( FIRE_MODE_BURST, true ) );
+  assertStrEq( "getDisplayModeLabel: MP5 safety override shows SAFE for BURST", "SAFE", getDisplayModeLabel( FIRE_MODE_BURST, true ) );
 }
 
-void testGetDisplayModeLabelSafeOverridesFullAuto()
+void testGetDisplayModeLabelSafetyOverrideFullAuto()
 {
-  assertStrEq( "getDisplayModeLabel: safe overrides FULL AUTO", "SAFE", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, true ) );
+  assertStrEq( "getDisplayModeLabel: MP5 safety override shows SAFE for FULL AUTO", "SAFE", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, true ) );
 }
 
-void testGetDisplayModeLabelUnsafeSingle()
+void testGetDisplayModeLabelNormalSingle()
 {
-  assertStrEq( "getDisplayModeLabel: unsafe shows SINGLE", "SINGLE", getDisplayModeLabel( FIRE_MODE_SINGLE, false ) );
+  assertStrEq( "getDisplayModeLabel: normal display shows SINGLE", "SINGLE", getDisplayModeLabel( FIRE_MODE_SINGLE, false ) );
 }
 
-void testGetDisplayModeLabelUnsafeBurst()
+void testGetDisplayModeLabelNormalBurst()
 {
-  assertStrEq( "getDisplayModeLabel: unsafe shows BURST", "BURST", getDisplayModeLabel( FIRE_MODE_BURST, false ) );
+  assertStrEq( "getDisplayModeLabel: normal display shows BURST", "BURST", getDisplayModeLabel( FIRE_MODE_BURST, false ) );
 }
 
-void testGetDisplayModeLabelUnsafeFullAuto()
+void testGetDisplayModeLabelNormalFullAuto()
 {
-  assertStrEq( "getDisplayModeLabel: unsafe shows FULL AUTO", "FULL AUTO", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, false ) );
+  assertStrEq( "getDisplayModeLabel: normal display shows FULL AUTO", "FULL AUTO", getDisplayModeLabel( FIRE_MODE_FULL_AUTO, false ) );
 }
 
 // ---- RPM Changed Tests ----
@@ -579,6 +579,9 @@ void setup()
   Serial.begin( 115200 );
   delay( 2000 );
   Serial.println( "=== Phantasm Logic Tests ===" );
+  Serial.println( "Selector: 2P3T slide, Pos1=SINGLE Pos2=BURST Pos3=FULL AUTO" );
+  Serial.println( "Fallback: HIGH/HIGH selector state -> SINGLE" );
+  Serial.println( "Display SAFE state is driven by MP5 slap safety override" );
   Serial.println();
 
   // Fire mode tests
@@ -608,13 +611,13 @@ void setup()
   testGetFireModeLabelBurst();
   testGetFireModeLabelFullAuto();
 
-  // Display mode label tests (safe override)
-  testGetDisplayModeLabelSafeOverridesSingle();
-  testGetDisplayModeLabelSafeOverridesBurst();
-  testGetDisplayModeLabelSafeOverridesFullAuto();
-  testGetDisplayModeLabelUnsafeSingle();
-  testGetDisplayModeLabelUnsafeBurst();
-  testGetDisplayModeLabelUnsafeFullAuto();
+  // Display mode label tests (MP5 safety override)
+  testGetDisplayModeLabelSafetyOverrideSingle();
+  testGetDisplayModeLabelSafetyOverrideBurst();
+  testGetDisplayModeLabelSafetyOverrideFullAuto();
+  testGetDisplayModeLabelNormalSingle();
+  testGetDisplayModeLabelNormalBurst();
+  testGetDisplayModeLabelNormalFullAuto();
 
   // RPM changed tests
   testHasRPMChangedTrue();

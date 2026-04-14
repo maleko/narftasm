@@ -18,7 +18,8 @@
 You need a **2-pole 3-position (2P3T) slide switch**. This has 2 independent
 poles (A and B), each with a common terminal and 3 selectable positions.
 Two pins (D2 and D3) are used with `INPUT_PULLUP` to encode 3 fire modes
-in binary. Safety is handled separately by the MP5 slap switch.
+in binary. The unreachable `HIGH/HIGH` state falls back to **Single** in the
+current sketch. Safety is handled separately by the MP5 slap switch.
 
 ## Wiring Diagram (Mermaid)
 
@@ -57,7 +58,7 @@ graph TD
         P1_1["Pole A — Pos 1 (Single)"]
         P1_3["Pole A — Pos 3 (Full Auto)"]
         P2C["Pole B — Common"]
-        P2_1["Pole B — Pos 2 (Burst)"]
+        P2_2["Pole B — Pos 2 (Burst)"]
         P2_3["Pole B — Pos 3 (Full Auto)"]
     end
 
@@ -99,7 +100,7 @@ graph TD
     P2C -->|"wire"| D3
     P1_1 -->|"wire"| GND
     P1_3 -->|"wire"| GND
-    P2_1 -->|"wire"| GND
+    P2_2 -->|"wire"| GND
     P2_3 -->|"wire"| GND
 
     TC -->|"wire"| D6
@@ -171,6 +172,7 @@ graph TD
 | **1** | Closed → LOW | Open → HIGH | **Single Shot** |
 | **2** | Open → HIGH | Closed → LOW | **3-Round Burst** |
 | **3** | Closed → LOW | Closed → LOW | **Full Auto** |
+| **Fallback** | Open → HIGH | Open → HIGH | **Single Shot** (should not occur with correct wiring) |
 
 ## Slide Switch Wiring Detail
 
@@ -203,6 +205,7 @@ The 2P3T slide switch has 2 poles (A and B), each with a common pin and
 - The **MP5 slap microswitch** uses the **Normally Closed (NC)** terminal.
   At rest (bolt locked) the pin is LOW (closed to GND); when the bolt is
   open the switch opens and the pullup pulls the pin HIGH. Firing is
-  disabled whenever the pin reads HIGH.
+  disabled whenever the pin reads HIGH, regardless of the fire-mode selector
+  position.
 - When a pin is not connected to GND, the internal pull-up holds it HIGH.
 - Refer to `NBC-Pinout.png` for physical pad locations on your board.
