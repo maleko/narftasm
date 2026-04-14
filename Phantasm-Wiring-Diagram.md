@@ -5,7 +5,7 @@
 | Component | Purpose |
 |---|---|
 | **SPST On-Off Toggle Switch** | Master power switch — cuts battery power to the board |
-| **4-Position 2-Pole Rotary Switch (2P4T)** | Selects fire mode (Safety / Single / Burst / Full Auto) |
+| **3-Position 2-Pole Slide Switch (2P3T)** | Selects fire mode (Single / Burst / Full Auto) |
 | **Trigger Microswitch** | Already installed — fires darts (wired NO) |
 | **Rev Microswitch** | Pre-rev toggle — keeps flywheels idling at low RPM (wired NC) |
 | **MP5 Slap Microswitch** | Bolt-lock safety — prevents firing when bolt is open (wired NC) |
@@ -15,13 +15,10 @@
 
 ## Select Fire Switch Type
 
-You need a **2-pole 4-position (2P4T) rotary switch**. This has 2 independent
-poles (A and B), each with a common terminal and 4 selectable positions.
-Two pins (D2 and D3) are used with `INPUT_PULLUP` to encode 4 fire modes
-in binary.
-
-> ⚠️ Do **not** use a 3-position toggle switch — it cannot produce all 4
-> fire mode combinations needed for Safety, Single, Burst, and Full Auto.
+You need a **2-pole 3-position (2P3T) slide switch**. This has 2 independent
+poles (A and B), each with a common terminal and 3 selectable positions.
+Two pins (D2 and D3) are used with `INPUT_PULLUP` to encode 3 fire modes
+in binary. Safety is handled separately by the MP5 slap switch.
 
 ## Wiring Diagram (Mermaid)
 
@@ -54,14 +51,14 @@ graph TD
         GND["GND pad"]
     end
 
-    subgraph SW["4-Position 2P4T Rotary Switch"]
+    subgraph SW["3-Position 2P3T Slide Switch"]
         direction TB
         P1C["Pole A — Common"]
-        P1_1["Pole A — Pos 2 (Single)"]
-        P1_3["Pole A — Pos 4 (Full Auto)"]
+        P1_1["Pole A — Pos 1 (Single)"]
+        P1_3["Pole A — Pos 3 (Full Auto)"]
         P2C["Pole B — Common"]
-        P2_1["Pole B — Pos 3 (Burst)"]
-        P2_3["Pole B — Pos 4 (Full Auto)"]
+        P2_1["Pole B — Pos 2 (Burst)"]
+        P2_3["Pole B — Pos 3 (Full Auto)"]
     end
 
     subgraph TRIG["Trigger Microswitch (NO)"]
@@ -154,8 +151,8 @@ graph TD
 |---|---|
 | **B+** | On-off switch Terminal 2 (other terminal to battery B+) |
 | **B−** | Battery B− (direct) |
-| **D2** | Rotary switch — Pole A Common |
-| **D3** | Rotary switch — Pole B Common |
+| **D2** | Slide switch — Pole A Common |
+| **D3** | Slide switch — Pole B Common |
 | **D4** | Rotary encoder — CLK |
 | **D6** | Trigger microswitch — Common |
 | **A1** | Rev microswitch — Common |
@@ -165,34 +162,31 @@ graph TD
 | **A4** | OLED — SDA |
 | **A5** | OLED — SCL |
 | **5V** | Rotary encoder VCC, OLED VCC |
-| **GND** | Rotary switch terminals, Trigger NO, Rev NC, MP5 Slap NC, Encoder GND, OLED GND |
+| **GND** | Slide switch terminals, Trigger NO, Rev NC, MP5 Slap NC, Encoder GND, OLED GND |
 
 ## Fire Mode Truth Table
 
 | Position | Pole A (D2) | Pole B (D3) | Fire Mode |
 |---|---|---|---|
-| **1** | Open → HIGH | Open → HIGH | **Safety** |
-| **2** | Closed → LOW | Open → HIGH | **Single Shot** |
-| **3** | Open → HIGH | Closed → LOW | **3-Round Burst** |
-| **4** | Closed → LOW | Closed → LOW | **Full Auto** |
+| **1** | Closed → LOW | Open → HIGH | **Single Shot** |
+| **2** | Open → HIGH | Closed → LOW | **3-Round Burst** |
+| **3** | Closed → LOW | Closed → LOW | **Full Auto** |
 
-## Rotary Switch Wiring Detail
+## Slide Switch Wiring Detail
 
-The 2P4T rotary switch has 2 poles (A and B), each with a common pin and
-4 position pins. Wire the positions to GND as follows:
+The 2P3T slide switch has 2 poles (A and B), each with a common pin and
+3 position pins. Wire the positions to GND as follows:
 
 | Terminal | Connects To |
 |---|---|
 | Pole A — Common | D2 |
-| Pole A — Position 1 | Not connected (D2 stays HIGH) |
-| Pole A — Position 2 | GND (pulls D2 LOW) |
-| Pole A — Position 3 | Not connected (D2 stays HIGH) |
-| Pole A — Position 4 | GND (pulls D2 LOW) |
+| Pole A — Position 1 | GND (pulls D2 LOW) |
+| Pole A — Position 2 | Not connected (D2 stays HIGH) |
+| Pole A — Position 3 | GND (pulls D2 LOW) |
 | Pole B — Common | D3 |
 | Pole B — Position 1 | Not connected (D3 stays HIGH) |
-| Pole B — Position 2 | Not connected (D3 stays HIGH) |
+| Pole B — Position 2 | GND (pulls D3 LOW) |
 | Pole B — Position 3 | GND (pulls D3 LOW) |
-| Pole B — Position 4 | GND (pulls D3 LOW) |
 
 ## Notes
 

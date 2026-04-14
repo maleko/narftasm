@@ -32,7 +32,6 @@
 
 // --- Fire Mode Enum ---
 enum FireMode {
-  FIRE_MODE_SAFETY,
   FIRE_MODE_SINGLE,
   FIRE_MODE_BURST,
   FIRE_MODE_FULL_AUTO
@@ -58,7 +57,7 @@ bool idling = false;
 EncoderMode encoderMode = ENCODER_MODE_RPM;
 unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
-FireMode displayedMode = FIRE_MODE_SAFETY;
+FireMode displayedMode = FIRE_MODE_SINGLE;
 EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
 bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
@@ -67,18 +66,16 @@ int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
 #define BUTTON_DEBOUNCE_MS 200
 
-// --- Pure Logic: Determine fire mode from 4-position rotary switch state ---
-// Position 1: HIGH/HIGH = Safety, 2: LOW/HIGH = Single,
-// 3: HIGH/LOW = Burst, 4: LOW/LOW = Full Auto
+// --- Pure Logic: Determine fire mode from 3-position slide switch state ---
+// Position 1: LOW/HIGH = Single, 2: HIGH/LOW = Burst, 3: LOW/LOW = Full Auto
+// HIGH/HIGH cannot occur with a properly wired slide switch; defaults to SINGLE.
 FireMode getFireMode( bool select1Low, bool select2Low )
 {
   if( !select1Low && select2Low )
-    return FIRE_MODE_SINGLE;
-  if( select1Low && !select2Low )
     return FIRE_MODE_BURST;
   if( select1Low && select2Low )
     return FIRE_MODE_FULL_AUTO;
-  return FIRE_MODE_SAFETY;
+  return FIRE_MODE_SINGLE;
 }
 
 // --- Pure Logic: Clamp RPM within valid bounds ---
@@ -101,11 +98,10 @@ const char* getFireModeLabel( FireMode mode )
 {
   switch( mode )
   {
-    case FIRE_MODE_SINGLE:    return "SINGLE";
     case FIRE_MODE_BURST:     return "BURST";
     case FIRE_MODE_FULL_AUTO: return "FULL AUTO";
-    case FIRE_MODE_SAFETY:
-    default:                  return "SAFETY";
+    case FIRE_MODE_SINGLE:
+    default:                  return "SINGLE";
   }
 }
 
@@ -234,17 +230,15 @@ void selectFire()
 
   switch( mode )
   {
-    case FIRE_MODE_SINGLE:
-      singleShot();
-      break;
     case FIRE_MODE_BURST:
       burstFire();
       break;
     case FIRE_MODE_FULL_AUTO:
       fullAuto();
       break;
-    case FIRE_MODE_SAFETY:
+    case FIRE_MODE_SINGLE:
     default:
+      singleShot();
       break;
   }
 }
@@ -386,7 +380,7 @@ void setup()
   CalibrateFlywheels();
 
   display.clear();
-  displayedMode = FIRE_MODE_SAFETY;
+  displayedMode = FIRE_MODE_SINGLE;
   displayedRPM = 0;
   displayedBurstCount = 0;
   displayedEncoderMode = ENCODER_MODE_RPM;
@@ -457,7 +451,7 @@ void loop()
 
   bool mp5SlapSafe = isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH );
 
-  if( mode == FIRE_MODE_SAFETY || !mp5SlapSafe )
+  if( !mp5SlapSafe )
   {
     NBCProcessFlywheelSpeed();
     FlyshotStopMotors();
