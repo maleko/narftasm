@@ -62,6 +62,7 @@ EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
 bool displayedSafe = false;
 bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
+float displayedVoltage = -1.0;
 int lastEncoderCLK = HIGH;
 int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
@@ -180,6 +181,25 @@ bool isMp5SlapSafe( bool pinHigh )
   return !pinHigh;
 }
 
+// --- Pure Logic: Format voltage for display ---
+void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
+{
+  int whole = (int)voltage;
+  int frac = (int)( ( voltage - whole ) * 10 + 0.5 ) % 10;
+  if( whole < 10 )
+    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
+  else
+    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
+}
+
+// --- Pure Logic: Check if voltage display needs updating ---
+bool hasVoltageChanged( float oldVoltage, float newVoltage )
+{
+  int oldTenths = (int)( oldVoltage * 10 + 0.5 );
+  int newTenths = (int)( newVoltage * 10 + 0.5 );
+  return oldTenths != newTenths;
+}
+
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
 void fireSolenoidCycle()
 {
@@ -290,7 +310,7 @@ bool pollEncoderButton()
 }
 
 // --- Display Update (only redraws changed values to minimise I2C traffic) ---
-void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal, bool safe )
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal, bool safe, float voltage )
 {
   if( mode != displayedMode || safe != displayedSafe )
   {
@@ -348,6 +368,16 @@ void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode enc
     displayedPreRev = preRev;
     displayedPreRevRPM = preRevRPMVal;
   }
+
+  if( hasVoltageChanged( displayedVoltage, voltage ) )
+  {
+    char voltageBuf[17];
+    formatVoltageDisplay( voltage, voltageBuf, sizeof( voltageBuf ) );
+    display.clearLine( 7 );
+    display.setCursor( 0, 7 );
+    display.print( voltageBuf );
+    displayedVoltage = voltage;
+  }
 }
 
 // --- Setup ---
@@ -397,6 +427,7 @@ void setup()
   displayedEncoderMode = ENCODER_MODE_RPM;
   displayedPreRev = false;
   displayedPreRevRPM = 0;
+  displayedVoltage = -1.0;
 
   // Ensure the debounce period has already "elapsed" so the very first button
   // press in loop() registers immediately, regardless of how quickly setup() ran.
@@ -406,7 +437,8 @@ void setup()
 // --- Main Loop ---
 void loop()
 {
-  if( NBCGetVoltage() < MIN_BATTERY_VOLTAGE )
+  float currentVoltage = NBCGetVoltage();
+  if( currentVoltage < MIN_BATTERY_VOLTAGE )
     return;
 
   // Poll encoder button for mode toggle
@@ -459,7 +491,7 @@ void loop()
   bool preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
   bool mp5SlapSafe = isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH );
 
-  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM, !mp5SlapSafe );
+  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM, !mp5SlapSafe, currentVoltage );
 
   if( !mp5SlapSafe )
   {
