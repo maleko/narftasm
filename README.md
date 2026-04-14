@@ -12,6 +12,10 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
   2. Single shot (one dart per trigger pull)
   3. 3-round burst (three darts per trigger pull)
   4. Full auto (continuous fire while trigger held)
+- **MP5 Slap Safety** — NC microswitch on A2 acts as a bolt-lock safety.
+  At rest (bolt locked) the switch is closed to GND (pin LOW = safe).
+  When the bolt is open the switch opens and the pullup pulls the pin
+  HIGH, disabling firing.
 - **Pre-Rev** — NC microswitch on A1 keeps flywheels idling at low RPM
   for faster spin-up response when firing. Idle speed is adjustable
   via the encoder (2000–5000 RPM in 250 RPM steps)
@@ -28,12 +32,15 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 |---|---|
 | Trigger microswitch (NO) | D6 |
 | Rev microswitch (NC) | A1 |
+| MP5 slap microswitch (NC) | A2 |
 | 4-position 2P4T rotary switch | D2, D3 |
 | KY-040 rotary encoder | D4 (CLK), D11 (DT), D12 (SW) |
 | I2C SSD1306 OLED (5V tolerant) | A4 (SDA), A5 (SCL) |
 
 See [Phantasm-Wiring-Diagram.md](Phantasm-Wiring-Diagram.md) for full wiring
 details, truth tables, and terminal-level connection instructions.
+See [Phantasm-IEC60617-Schematic.md](Phantasm-IEC60617-Schematic.md) for
+the IEC 60617 schematic with wire schedule and signal logic summary.
 
 ## Dependencies
 
@@ -51,4 +58,5 @@ details, truth tables, and terminal-level connection instructions.
 | `test_fire_modes.ino` | Test sketch (upload to Arduino, check Serial output) |
 | `NBC.h` | NBC board library |
 | `Phantasm-Wiring-Diagram.md` | Wiring diagram and truth tables |
+| `Phantasm-IEC60617-Schematic.md` | IEC 60617 schematic with wire schedule |
 | `NBC-Pinout.png` | Board pinout reference |

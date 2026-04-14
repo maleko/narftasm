@@ -1,16 +1,3 @@
-#include <SSD1306Ascii.h>
-#include <SSD1306AsciiAvrI2c.h>
-#include <SSD1306AsciiSoftSpi.h>
-#include <SSD1306AsciiSpi.h>
-#include <SSD1306AsciiWire.h>
-#include <SSD1306init.h>
-
-#include <Bounce2.h>
-
-#include "NBC.h"
-#include <U8x8lib.h>
-#include <Wire.h>
-
 #include "NBC.h"
 #include <U8x8lib.h>
 #include <Wire.h>
@@ -377,12 +364,8 @@ void setup()
   display.begin();
   display.setFont( u8x8_font_chroma48medium8_r );
   display.setCursor( 0, 0 );
-  display.print( "NARFTASM" );
+  display.print( "PHANTASM" );
   display.setCursor( 0, 2 );
-  display.print( "By Maleko" );
-  display.setCursor( 0, 4 );
-  display.print( "Thx Airzone!" );
-  display.setCursor( 0, 6 );
   display.print( "Initialising..." );
 
   delay( 1000 );
