@@ -508,28 +508,42 @@ void testFormatVoltageDisplayNormal()
 {
   char buf[17];
   formatVoltageDisplay( 16.8, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 16.8V formats correctly", "Bat:16.8V", buf );
+  assertStrEq( "formatVoltageDisplay: 16.80V formats correctly", "Bat:16.80V", buf );
 }
 
 void testFormatVoltageDisplayLow()
 {
   char buf[17];
   formatVoltageDisplay( 12.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 12.0V formats correctly", "Bat:12.0V", buf );
+  assertStrEq( "formatVoltageDisplay: 12.00V formats correctly", "Bat:12.00V", buf );
 }
 
 void testFormatVoltageDisplaySingleDigit()
 {
   char buf[17];
   formatVoltageDisplay( 9.5, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 9.5V formats correctly", "Bat: 9.5V", buf );
+  assertStrEq( "formatVoltageDisplay: 9.50V formats correctly", "Bat: 9.50V", buf );
 }
 
 void testFormatVoltageDisplayZero()
 {
   char buf[17];
   formatVoltageDisplay( 0.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 0.0V formats correctly", "Bat: 0.0V", buf );
+  assertStrEq( "formatVoltageDisplay: 0.00V formats correctly", "Bat: 0.00V", buf );
+}
+
+void testFormatVoltageDisplayRoundingCarry()
+{
+  char buf[17];
+  formatVoltageDisplay( 16.95, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 16.95 formats correctly", "Bat:16.95V", buf );
+}
+
+void testFormatVoltageDisplayRoundingCarrySingleDigit()
+{
+  char buf[17];
+  formatVoltageDisplay( 9.95, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 9.95 formats correctly", "Bat: 9.95V", buf );
 }
 
 void testHasVoltageChangedTrue()
@@ -544,14 +558,14 @@ void testHasVoltageChangedFalse()
 
 void testHasVoltageChangedWithinTolerance()
 {
-  // Values that round to the same single-decimal place should not trigger a change
-  assertBool( "hasVoltageChanged: within rounding tolerance returns false", false, hasVoltageChanged( 16.81, 16.84 ) );
+  // Values that round to the same two-decimal place should not trigger a change
+  assertBool( "hasVoltageChanged: within rounding tolerance returns false", false, hasVoltageChanged( 16.811, 16.814 ) );
 }
 
 void testHasVoltageChangedAcrossRounding()
 {
-  // Values that round to different single-decimal places should trigger a change
-  assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.84, 16.86 ) );
+  // Values that round to different two-decimal places should trigger a change
+  assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.814, 16.816 ) );
 }
 
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
@@ -652,21 +666,22 @@ bool isMp5SlapSafe( bool pinHigh )
 
 void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
 {
-  // Format as "Bat:XX.XV" with leading space for single-digit voltages
-  int whole = (int)voltage;
-  int frac = (int)( ( voltage - whole ) * 10 + 0.5 ) % 10;
+  // Format as "Bat:XX.XXV" with leading space for single-digit voltages
+  int hundredths = (int)( voltage * 100 + 0.5 );
+  int whole = hundredths / 100;
+  int frac = hundredths % 100;
   if( whole < 10 )
-    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
+    snprintf( buf, bufSize, "Bat: %d.%02dV", whole, frac );
   else
-    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
+    snprintf( buf, bufSize, "Bat:%d.%02dV", whole, frac );
 }
 
 bool hasVoltageChanged( float oldVoltage, float newVoltage )
 {
-  // Only consider changed if the displayed single-decimal digit differs
-  int oldTenths = (int)( oldVoltage * 10 + 0.5 );
-  int newTenths = (int)( newVoltage * 10 + 0.5 );
-  return oldTenths != newTenths;
+  // Only consider changed if the displayed two-decimal digit differs
+  int oldHundredths = (int)( oldVoltage * 100 + 0.5 );
+  int newHundredths = (int)( newVoltage * 100 + 0.5 );
+  return oldHundredths != newHundredths;
 }
 
 void setup()
@@ -759,6 +774,8 @@ void setup()
   testFormatVoltageDisplayLow();
   testFormatVoltageDisplaySingleDigit();
   testFormatVoltageDisplayZero();
+  testFormatVoltageDisplayRoundingCarry();
+  testFormatVoltageDisplayRoundingCarrySingleDigit();
   testHasVoltageChangedTrue();
   testHasVoltageChangedFalse();
   testHasVoltageChangedWithinTolerance();
