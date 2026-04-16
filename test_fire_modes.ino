@@ -43,6 +43,8 @@ bool isPreRevActive( bool pinHigh );
 bool isMp5SlapSafe( bool pinHigh );
 const char* getDisplayModeLabel( FireMode mode, bool safe );
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
+void formatVoltageDisplay( float voltage, char* buf, size_t bufSize );
+bool hasVoltageChanged( float oldVoltage, float newVoltage );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -478,6 +480,96 @@ void testBurstCountDefault()
   assertEq( "Burst count default is 3", 3, BURST_COUNT_DEFAULT );
 }
 
+// ---- Voltage Display Tests ----
+
+void assertFloatEq( const char* testName, float expected, float actual, float tolerance )
+{
+  float diff = expected - actual;
+  if( diff < 0 ) diff = -diff;
+  if( diff <= tolerance )
+  {
+    Serial.print( "[PASS] " );
+    Serial.println( testName );
+    testsPassed++;
+  }
+  else
+  {
+    Serial.print( "[FAIL] " );
+    Serial.print( testName );
+    Serial.print( " — expected " );
+    Serial.print( expected, 1 );
+    Serial.print( ", got " );
+    Serial.println( actual, 1 );
+    testsFailed++;
+  }
+}
+
+void testFormatVoltageDisplayNormal()
+{
+  char buf[17];
+  formatVoltageDisplay( 16.8, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 16.8V formats correctly", "Bat:16.8V", buf );
+}
+
+void testFormatVoltageDisplayLow()
+{
+  char buf[17];
+  formatVoltageDisplay( 12.0, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 12.0V formats correctly", "Bat:12.0V", buf );
+}
+
+void testFormatVoltageDisplaySingleDigit()
+{
+  char buf[17];
+  formatVoltageDisplay( 9.5, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 9.5V formats correctly", "Bat: 9.5V", buf );
+}
+
+void testFormatVoltageDisplayZero()
+{
+  char buf[17];
+  formatVoltageDisplay( 0.0, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 0.0V formats correctly", "Bat: 0.0V", buf );
+}
+
+void testFormatVoltageDisplayRoundingCarry()
+{
+  char buf[17];
+  // 16.95 rounds up to 17.0 at one-decimal resolution
+  formatVoltageDisplay( 16.95, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 16.95 rounds to 17.0V", "Bat:17.0V", buf );
+}
+
+void testFormatVoltageDisplayRoundingCarrySingleDigit()
+{
+  char buf[17];
+  // 9.95 rounds up to 10.0 at one-decimal resolution
+  formatVoltageDisplay( 9.95, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageDisplay: 9.95 rounds to 10.0V", "Bat:10.0V", buf );
+}
+
+void testHasVoltageChangedTrue()
+{
+  assertBool( "hasVoltageChanged: different values returns true", true, hasVoltageChanged( 16.8, 16.7 ) );
+}
+
+void testHasVoltageChangedFalse()
+{
+  assertBool( "hasVoltageChanged: same values returns false", false, hasVoltageChanged( 16.8, 16.8 ) );
+}
+
+void testHasVoltageChangedWithinTolerance()
+{
+  // Values that round to the same one-decimal place should not trigger a change
+  assertBool( "hasVoltageChanged: within rounding tolerance returns false", false, hasVoltageChanged( 16.81, 16.84 ) );
+}
+
+void testHasVoltageChangedAcrossRounding()
+{
+  // Values that round to different one-decimal places should trigger a change
+  assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.84, 16.86 ) );
+}
+
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
 
 FireMode getFireMode( bool select1Low, bool select2Low )
@@ -574,6 +666,26 @@ bool isMp5SlapSafe( bool pinHigh )
   return !pinHigh;
 }
 
+void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
+{
+  // Format as "Bat:XX.XV" with leading space for single-digit voltages
+  int tenths = (int)( voltage * 10 + 0.5 );
+  int whole = tenths / 10;
+  int frac = tenths % 10;
+  if( whole < 10 )
+    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
+  else
+    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
+}
+
+bool hasVoltageChanged( float oldVoltage, float newVoltage )
+{
+  // Only consider changed if the displayed one-decimal digit differs
+  int oldTenths = (int)( oldVoltage * 10 + 0.5 );
+  int newTenths = (int)( newVoltage * 10 + 0.5 );
+  return oldTenths != newTenths;
+}
+
 void setup()
 {
   Serial.begin( 115200 );
@@ -658,6 +770,18 @@ void setup()
   testCalculateEncoderBurstClampsAtMax();
   testCalculateEncoderBurstClampsAtMin();
   testCalculateEncoderBurstNoDirection();
+
+  // Voltage display tests
+  testFormatVoltageDisplayNormal();
+  testFormatVoltageDisplayLow();
+  testFormatVoltageDisplaySingleDigit();
+  testFormatVoltageDisplayZero();
+  testFormatVoltageDisplayRoundingCarry();
+  testFormatVoltageDisplayRoundingCarrySingleDigit();
+  testHasVoltageChangedTrue();
+  testHasVoltageChangedFalse();
+  testHasVoltageChangedWithinTolerance();
+  testHasVoltageChangedAcrossRounding();
 
   Serial.println();
   Serial.println( "=== Results ===" );
