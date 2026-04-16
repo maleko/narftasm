@@ -508,42 +508,44 @@ void testFormatVoltageDisplayNormal()
 {
   char buf[17];
   formatVoltageDisplay( 16.8, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 16.80V formats correctly", "Bat:16.80V", buf );
+  assertStrEq( "formatVoltageDisplay: 16.8V formats correctly", "Bat:16.8V", buf );
 }
 
 void testFormatVoltageDisplayLow()
 {
   char buf[17];
   formatVoltageDisplay( 12.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 12.00V formats correctly", "Bat:12.00V", buf );
+  assertStrEq( "formatVoltageDisplay: 12.0V formats correctly", "Bat:12.0V", buf );
 }
 
 void testFormatVoltageDisplaySingleDigit()
 {
   char buf[17];
   formatVoltageDisplay( 9.5, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 9.50V formats correctly", "Bat: 9.50V", buf );
+  assertStrEq( "formatVoltageDisplay: 9.5V formats correctly", "Bat: 9.5V", buf );
 }
 
 void testFormatVoltageDisplayZero()
 {
   char buf[17];
   formatVoltageDisplay( 0.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 0.00V formats correctly", "Bat: 0.00V", buf );
+  assertStrEq( "formatVoltageDisplay: 0.0V formats correctly", "Bat: 0.0V", buf );
 }
 
 void testFormatVoltageDisplayRoundingCarry()
 {
   char buf[17];
+  // 16.95 rounds up to 17.0 at one-decimal resolution
   formatVoltageDisplay( 16.95, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 16.95 formats correctly", "Bat:16.95V", buf );
+  assertStrEq( "formatVoltageDisplay: 16.95 rounds to 17.0V", "Bat:17.0V", buf );
 }
 
 void testFormatVoltageDisplayRoundingCarrySingleDigit()
 {
   char buf[17];
+  // 9.95 rounds up to 10.0 at one-decimal resolution
   formatVoltageDisplay( 9.95, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 9.95 formats correctly", "Bat: 9.95V", buf );
+  assertStrEq( "formatVoltageDisplay: 9.95 rounds to 10.0V", "Bat:10.0V", buf );
 }
 
 void testHasVoltageChangedTrue()
@@ -558,14 +560,14 @@ void testHasVoltageChangedFalse()
 
 void testHasVoltageChangedWithinTolerance()
 {
-  // Values that round to the same two-decimal place should not trigger a change
-  assertBool( "hasVoltageChanged: within rounding tolerance returns false", false, hasVoltageChanged( 16.811, 16.814 ) );
+  // Values that round to the same one-decimal place should not trigger a change
+  assertBool( "hasVoltageChanged: within rounding tolerance returns false", false, hasVoltageChanged( 16.81, 16.84 ) );
 }
 
 void testHasVoltageChangedAcrossRounding()
 {
-  // Values that round to different two-decimal places should trigger a change
-  assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.814, 16.816 ) );
+  // Values that round to different one-decimal places should trigger a change
+  assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.84, 16.86 ) );
 }
 
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
@@ -666,22 +668,22 @@ bool isMp5SlapSafe( bool pinHigh )
 
 void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
 {
-  // Format as "Bat:XX.XXV" with leading space for single-digit voltages
-  int hundredths = (int)( voltage * 100 + 0.5 );
-  int whole = hundredths / 100;
-  int frac = hundredths % 100;
+  // Format as "Bat:XX.XV" with leading space for single-digit voltages
+  int tenths = (int)( voltage * 10 + 0.5 );
+  int whole = tenths / 10;
+  int frac = tenths % 10;
   if( whole < 10 )
-    snprintf( buf, bufSize, "Bat: %d.%02dV", whole, frac );
+    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
   else
-    snprintf( buf, bufSize, "Bat:%d.%02dV", whole, frac );
+    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
 }
 
 bool hasVoltageChanged( float oldVoltage, float newVoltage )
 {
-  // Only consider changed if the displayed two-decimal digit differs
-  int oldHundredths = (int)( oldVoltage * 100 + 0.5 );
-  int newHundredths = (int)( newVoltage * 100 + 0.5 );
-  return oldHundredths != newHundredths;
+  // Only consider changed if the displayed one-decimal digit differs
+  int oldTenths = (int)( oldVoltage * 10 + 0.5 );
+  int newTenths = (int)( newVoltage * 10 + 0.5 );
+  return oldTenths != newTenths;
 }
 
 void setup()

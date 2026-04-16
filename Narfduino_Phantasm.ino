@@ -184,21 +184,21 @@ bool isMp5SlapSafe( bool pinHigh )
 // --- Pure Logic: Format voltage for display ---
 void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
 {
-  int hundredths = (int)( voltage * 100 + 0.5 );
-  int whole = hundredths / 100;
-  int frac = hundredths % 100;
+  int tenths = (int)( voltage * 10 + 0.5 );
+  int whole = tenths / 10;
+  int frac = tenths % 10;
   if( whole < 10 )
-    snprintf( buf, bufSize, "Bat: %d.%02dV", whole, frac );
+    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
   else
-    snprintf( buf, bufSize, "Bat:%d.%02dV", whole, frac );
+    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
 }
 
 // --- Pure Logic: Check if voltage display needs updating ---
 bool hasVoltageChanged( float oldVoltage, float newVoltage )
 {
-  int oldHundredths = (int)( oldVoltage * 100 + 0.5 );
-  int newHundredths = (int)( newVoltage * 100 + 0.5 );
-  return oldHundredths != newHundredths;
+  int oldTenths = (int)( oldVoltage * 10 + 0.5 );
+  int newTenths = (int)( newVoltage * 10 + 0.5 );
+  return oldTenths != newTenths;
 }
 
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
