@@ -40,7 +40,7 @@ graph TD
         NBCBNEG["B− pad"]
         D2["D2 — PIN_SELECT_1"]
         D3["D3 — PIN_SELECT_2"]
-        D4["D4 — PIN_ENCODER_CLK"]
+        D13["D13 — PIN_ENCODER_CLK"]
         D6["D6 — PIN_TRIGGER"]
         A2["A2 — PIN_MP5_SLAP"]
         D11["D11 — PIN_ENCODER_DT"]
@@ -112,7 +112,7 @@ graph TD
     MC -->|"wire"| A2
     MNC -->|"wire"| GND
 
-    ECLK -->|"wire"| D4
+    ECLK -->|"wire"| D13
     EDT -->|"wire"| D11
     ESW -->|"wire"| D12
     EVCC -->|"wire"| VCC
@@ -136,7 +136,7 @@ graph TD
     style OLED fill:#5c1a3a,stroke:#ff3672,color:#ffffff
     style D2 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style D3 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
-    style D4 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
+    style D13 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style D6 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style D11 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style D12 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
@@ -154,7 +154,7 @@ graph TD
 | **B−** | Battery B− (direct) |
 | **D2** | Slide switch — Pole A Common |
 | **D3** | Slide switch — Pole B Common |
-| **D4** | Rotary encoder — CLK |
+| **D13** | Rotary encoder — CLK |
 | **D6** | Trigger microswitch — Common |
 | **A1** | Rev microswitch — Common |
 | **A2** | MP5 slap microswitch — Common |
