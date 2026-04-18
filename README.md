@@ -33,7 +33,7 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 | Rev microswitch (NC) | A1 |
 | MP5 slap microswitch (NC) | A2 |
 | 3-position 2P3T slide switch | D2, D3 |
-| KY-040 rotary encoder | D4 (CLK), D11 (DT), D12 (SW) |
+| KY-040 rotary encoder | D13 (CLK), D11 (DT), D12 (SW) |
 | I2C SSD1306 OLED (5V tolerant) | A4 (SDA), A5 (SCL) |
 
 See [Phantasm-Wiring-Diagram.md](Phantasm-Wiring-Diagram.md) for full wiring
@@ -57,5 +57,5 @@ the IEC 60617 schematic with wire schedule and signal logic summary.
 | `test_fire_modes.ino` | Test sketch (upload to Arduino, check Serial output) |
 | `NBC.h` | NBC board library |
 | `Phantasm-Wiring-Diagram.md` | Wiring diagram and truth tables |
-| `Phantasm-IEC60617-Schematic.md` | IEC 60617 schematic with wire schedule |
+| `Phantasm-IEC60617-Schematic.svg` | IEC 60617 schematic with wire schedule |
 | `NBC-Pinout.png` | Board pinout reference |

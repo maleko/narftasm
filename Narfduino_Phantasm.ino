@@ -7,7 +7,7 @@
 #define PIN_PRE_REV A1
 #define PIN_SELECT_1 2
 #define PIN_SELECT_2 3
-#define PIN_ENCODER_CLK 4
+#define PIN_ENCODER_CLK 13
 #define PIN_ENCODER_DT 11
 #define PIN_ENCODER_SW 12
 #define PIN_MP5_SLAP A2
