@@ -63,7 +63,8 @@ bool displayedSafe = false;
 bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
 float displayedVoltage = -1.0;
-int lastEncoderCLK = HIGH;
+uint8_t lastEncoderState = 0b11;
+int pendingEncoderDir = 0;
 int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
 #define BUTTON_DEBOUNCE_MS 200
@@ -274,21 +275,36 @@ void selectFire()
 }
 
 // --- Encoder Polling (non-interrupt, avoids PCINT conflict with tachometers) ---
+// KY-040 detent is CLK=HIGH, DT=HIGH (state 0b11). One click traverses:
+//   CW:  11 -> 01 -> 00 -> 10 -> 11  (CLK falls first)
+//   CCW: 11 -> 10 -> 00 -> 01 -> 11  (DT falls first)
+// Direction is captured from the first state seen after leaving detent so the
+// reading remains correct even when the main loop is too slow to catch every
+// quadrature transition. The click is committed on return to detent.
 int pollEncoderDirection()
 {
-  int currentCLK = digitalRead( PIN_ENCODER_CLK );
+  uint8_t currentState = ( digitalRead( PIN_ENCODER_CLK ) << 1 ) | digitalRead( PIN_ENCODER_DT );
 
-  if( currentCLK != lastEncoderCLK && currentCLK == LOW )
+  if( currentState == lastEncoderState )
+    return 0;
+
+  if( lastEncoderState == 0b11 )
   {
-    lastEncoderCLK = currentCLK;
-    if( digitalRead( PIN_ENCODER_DT ) != currentCLK )
-      return 1;   // Clockwise
-    else
-      return -1;  // Anti-clockwise
+    if( currentState == 0b01 )
+      pendingEncoderDir = 1;   // Clockwise
+    else if( currentState == 0b10 )
+      pendingEncoderDir = -1;  // Anti-clockwise
   }
 
-  lastEncoderCLK = currentCLK;
-  return 0;
+  int reportedDir = 0;
+  if( currentState == 0b11 && pendingEncoderDir != 0 )
+  {
+    reportedDir = pendingEncoderDir;
+    pendingEncoderDir = 0;
+  }
+
+  lastEncoderState = currentState;
+  return reportedDir;
 }
 
 // --- Encoder Button Polling (with debounce) ---
@@ -393,7 +409,8 @@ void setup()
   pinMode( PIN_ENCODER_DT, INPUT_PULLUP );
   pinMode( PIN_ENCODER_SW, INPUT_PULLUP );
 
-  lastEncoderCLK = digitalRead( PIN_ENCODER_CLK );
+  lastEncoderState = ( digitalRead( PIN_ENCODER_CLK ) << 1 ) | digitalRead( PIN_ENCODER_DT );
+  pendingEncoderDir = 0;
   lastButtonState = digitalRead( PIN_ENCODER_SW );
 
   display.begin();
