@@ -1,6 +1,7 @@
 #include "NBC.h"
 #include <U8x8lib.h>
 #include <Wire.h>
+#include <RotaryEncoder.h>
 
 // --- Pin Definitions ---
 #define PIN_TRIGGER 6
@@ -47,6 +48,11 @@ enum EncoderMode {
 // --- OLED Display (I2C, text-only for low memory) ---
 U8X8_SSD1306_128X64_NONAME_HW_I2C display( U8X8_PIN_NONE );
 
+// --- Rotary Encoder (mathertel/RotaryEncoder, polled from loop()) ---
+// KY-040 detents at both pins HIGH, so LatchMode::FOUR3. Pin order
+// (DT, CLK) is chosen so clockwise rotation yields positive deltas.
+RotaryEncoder encoder( PIN_ENCODER_DT, PIN_ENCODER_CLK, RotaryEncoder::LatchMode::FOUR3 );
+
 // --- State ---
 int triggerState = LOW;
 int lastTriggerState = HIGH;
@@ -63,8 +69,6 @@ bool displayedSafe = false;
 bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
 float displayedVoltage = -1.0;
-uint8_t lastEncoderState = 0b11;
-int pendingEncoderDir = 0;
 int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
 #define BUTTON_DEBOUNCE_MS 200
@@ -275,38 +279,17 @@ void selectFire()
 }
 
 // --- Encoder Polling (non-interrupt, avoids PCINT conflict with tachometers) ---
-// KY-040 detent is CLK=HIGH, DT=HIGH (state 0b11). One click traverses:
-//   CW:  11 -> 01 -> 00 -> 10 -> 11  (CLK falls first)
-//   CCW: 11 -> 10 -> 00 -> 01 -> 11  (DT falls first)
-// Direction is captured from the first state seen after leaving detent so the
-// reading remains correct even when the main loop is too slow to catch every
-// quadrature transition. The click is committed on return to detent.
+// Delegates quadrature decoding to the mathertel RotaryEncoder library.
+// Returns +1 for one clockwise detent, -1 for counter-clockwise, 0 otherwise.
 int pollEncoderDirection()
 {
-  uint8_t clkBit = ( digitalRead( PIN_ENCODER_CLK ) == HIGH ) ? 1 : 0;
-  uint8_t dtBit  = ( digitalRead( PIN_ENCODER_DT )  == HIGH ) ? 1 : 0;
-  uint8_t currentState = ( clkBit << 1 ) | dtBit;
-
-  if( currentState == lastEncoderState )
-    return 0;
-
-  if( lastEncoderState == 0b11 )
-  {
-    if( currentState == 0b01 )
-      pendingEncoderDir = 1;   // Clockwise
-    else if( currentState == 0b10 )
-      pendingEncoderDir = -1;  // Anti-clockwise
-  }
-
-  int reportedDir = 0;
-  if( currentState == 0b11 && pendingEncoderDir != 0 )
-  {
-    reportedDir = pendingEncoderDir;
-    pendingEncoderDir = 0;
-  }
-
-  lastEncoderState = currentState;
-  return reportedDir;
+  encoder.tick();
+  RotaryEncoder::Direction dir = encoder.getDirection();
+  if( dir == RotaryEncoder::Direction::CLOCKWISE )
+    return 1;
+  if( dir == RotaryEncoder::Direction::COUNTERCLOCKWISE )
+    return -1;
+  return 0;
 }
 
 // --- Encoder Button Polling (with debounce) ---
@@ -407,12 +390,10 @@ void setup()
   pinMode( PIN_MP5_SLAP, INPUT_PULLUP );
   pinMode( PIN_SELECT_1, INPUT_PULLUP );
   pinMode( PIN_SELECT_2, INPUT_PULLUP );
-  pinMode( PIN_ENCODER_CLK, INPUT_PULLUP );
-  pinMode( PIN_ENCODER_DT, INPUT_PULLUP );
   pinMode( PIN_ENCODER_SW, INPUT_PULLUP );
 
-  lastEncoderState = ( digitalRead( PIN_ENCODER_CLK ) << 1 ) | digitalRead( PIN_ENCODER_DT );
-  pendingEncoderDir = 0;
+  // Encoder CLK/DT pins are configured as INPUT_PULLUP by the RotaryEncoder
+  // constructor; no explicit pinMode needed here.
   lastButtonState = digitalRead( PIN_ENCODER_SW );
 
   display.begin();

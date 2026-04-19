@@ -46,6 +46,9 @@ the IEC 60617 schematic with wire schedule and signal logic summary.
 - **NBC.h** — Narfduino Brushless Compleat library (included)
 - **U8g2** — Install via Arduino IDE: *Sketch → Include Library → Manage
   Libraries → search "U8g2"
+- **RotaryEncoder** — [mathertel/RotaryEncoder](https://github.com/mathertel/RotaryEncoder).
+  Install via Arduino IDE: *Sketch → Include Library → Manage Libraries →
+  search "RotaryEncoder" by Matthias Hertel*
 - **Minicore** — Add the [Minicore](https://mcudude.github.io/MiniCore/package_MCUdude_MiniCore_index.json) to the additional board manager URLS in Arduino Options and install Minicore in the board manager menu
   - Select Board | Minicore | atmega328
 
