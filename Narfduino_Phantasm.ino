@@ -283,7 +283,9 @@ void selectFire()
 // quadrature transition. The click is committed on return to detent.
 int pollEncoderDirection()
 {
-  uint8_t currentState = ( digitalRead( PIN_ENCODER_CLK ) << 1 ) | digitalRead( PIN_ENCODER_DT );
+  uint8_t clkBit = ( digitalRead( PIN_ENCODER_CLK ) == HIGH ) ? 1 : 0;
+  uint8_t dtBit  = ( digitalRead( PIN_ENCODER_DT )  == HIGH ) ? 1 : 0;
+  uint8_t currentState = ( clkBit << 1 ) | dtBit;
 
   if( currentState == lastEncoderState )
     return 0;
