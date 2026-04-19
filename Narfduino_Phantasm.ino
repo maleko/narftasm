@@ -41,12 +41,23 @@ enum FireMode {
   FIRE_MODE_FULL_AUTO
 };
 
-// --- Encoder Mode Enum ---
-enum EncoderMode {
-  ENCODER_MODE_RPM,
-  ENCODER_MODE_BURST,
-  ENCODER_MODE_PREREV
+// --- Display State Enum ---
+enum DisplayState {
+  DISPLAY_VIEW,
+  DISPLAY_MENU,
+  DISPLAY_EDIT
 };
+
+// --- Menu Item Enum ---
+enum MenuItem {
+  MENU_ITEM_RPM,
+  MENU_ITEM_BURST,
+  MENU_ITEM_PREREV,
+  MENU_ITEM_BACK,
+  MENU_ITEM_COUNT
+};
+
+#define DISPLAY_MENU_TIMEOUT_MS 10000UL
 
 // --- OLED Display (I2C, text-only for low memory) ---
 U8X8_SSD1306_128X64_NONAME_HW_I2C display( U8X8_PIN_NONE );
@@ -90,13 +101,15 @@ unsigned long motorRPM = MOTOR_RPM_DEFAULT;
 int burstCount = BURST_COUNT_DEFAULT;
 unsigned long preRevRPM = PRE_REV_RPM_DEFAULT;
 bool idling = false;
-EncoderMode encoderMode = ENCODER_MODE_RPM;
+DisplayState displayState = DISPLAY_VIEW;
+DisplayState displayedState = DISPLAY_VIEW;
+MenuItem menuSelection = MENU_ITEM_RPM;
+MenuItem displayedMenuSelection = MENU_ITEM_RPM;
+uint32_t lastActivityMs = 0;
 unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
 FireMode displayedMode = FIRE_MODE_SINGLE;
-EncoderMode displayedEncoderMode = ENCODER_MODE_RPM;
 bool displayedSafe = false;
-bool displayedPreRev = false;
 unsigned long displayedPreRevRPM = 0;
 float displayedVoltage = -1.0;
 int lastButtonState = HIGH;
@@ -162,16 +175,6 @@ bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
   return oldRPM != newRPM;
 }
 
-// --- Pure Logic: Toggle encoder mode (RPM -> Burst -> Pre-Rev -> RPM) ---
-EncoderMode toggleEncoderMode( EncoderMode currentMode )
-{
-  if( currentMode == ENCODER_MODE_RPM )
-    return ENCODER_MODE_BURST;
-  if( currentMode == ENCODER_MODE_BURST )
-    return ENCODER_MODE_PREREV;
-  return ENCODER_MODE_RPM;
-}
-
 // --- Pure Logic: Clamp burst count within valid bounds ---
 int clampBurstCount( int count, int minCount, int maxCount )
 {
@@ -194,18 +197,6 @@ unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction
   return clampRPM( newRPM, minRPM, maxRPM );
 }
 
-// --- Pure Logic: Get display label for encoder mode ---
-const char* getEncoderModeLabel( EncoderMode mode )
-{
-  switch( mode )
-  {
-    case ENCODER_MODE_BURST:  return "BURST";
-    case ENCODER_MODE_PREREV: return "PREREV";
-    case ENCODER_MODE_RPM:
-    default:                  return "RPM";
-  }
-}
-
 // --- Pure Logic: Determine pre-rev state from NC switch reading ---
 // NC switch wiring: closed at rest pulls pin LOW, opened pulls pin HIGH
 // via INPUT_PULLUP. Pre-rev is active when the switch is open (pin HIGH).
@@ -222,24 +213,88 @@ bool isMp5SlapSafe( bool pinHigh )
   return !pinHigh;
 }
 
-// --- Pure Logic: Format voltage for display ---
-void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
-{
-  int tenths = (int)( voltage * 10 + 0.5 );
-  int whole = tenths / 10;
-  int frac = tenths % 10;
-  if( whole < 10 )
-    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
-  else
-    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
-}
-
 // --- Pure Logic: Check if voltage display needs updating ---
 bool hasVoltageChanged( float oldVoltage, float newVoltage )
 {
   int oldTenths = (int)( oldVoltage * 10 + 0.5 );
   int newTenths = (int)( newVoltage * 10 + 0.5 );
   return oldTenths != newTenths;
+}
+
+// --- Pure Logic: Format voltage for compact 5-char slot ("XX.XV") ---
+void formatVoltageShort( float voltage, char* buf, size_t bufSize )
+{
+  int tenths = (int)( voltage * 10 + 0.5 );
+  int whole = tenths / 10;
+  int frac = tenths % 10;
+  if( whole < 10 )
+    snprintf( buf, bufSize, " %d.%dV", whole, frac );
+  else
+    snprintf( buf, bufSize, "%d.%dV", whole, frac );
+}
+
+// --- Pure Logic: Advance display state on encoder click ---
+DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bool clicked )
+{
+  if( !clicked )
+    return current;
+  if( current == DISPLAY_VIEW )
+    return DISPLAY_MENU;
+  if( current == DISPLAY_MENU )
+    return ( selected == MENU_ITEM_BACK ) ? DISPLAY_VIEW : DISPLAY_EDIT;
+  return DISPLAY_MENU;
+}
+
+// --- Pure Logic: Cycle menu selection with wrap-around ---
+MenuItem cycleMenuItem( MenuItem current, int direction )
+{
+  if( direction == 0 )
+    return current;
+  int idx = (int)current + direction;
+  while( idx < 0 ) idx += MENU_ITEM_COUNT;
+  while( idx >= MENU_ITEM_COUNT ) idx -= MENU_ITEM_COUNT;
+  return (MenuItem)idx;
+}
+
+// --- Pure Logic: Detect menu inactivity timeout (handles millis() rollover) ---
+bool isMenuTimeoutExpired( uint32_t lastActivityMs, uint32_t nowMs, uint32_t timeoutMs )
+{
+  return ( nowMs - lastActivityMs ) >= timeoutMs;
+}
+
+// --- Pure Logic: Get menu item label ---
+const char* getMenuItemLabel( MenuItem item )
+{
+  switch( item )
+  {
+    case MENU_ITEM_BURST:  return "Burst";
+    case MENU_ITEM_PREREV: return "PreRev";
+    case MENU_ITEM_BACK:   return "Back";
+    case MENU_ITEM_RPM:
+    default:               return "RPM";
+  }
+}
+
+// --- Pure Logic: Get short centred fire-mode label ("AUTO" for FULL_AUTO) ---
+const char* getCenterModeLabel( FireMode mode, bool safe )
+{
+  if( safe ) return "SAFE";
+  switch( mode )
+  {
+    case FIRE_MODE_BURST:     return "BURST";
+    case FIRE_MODE_FULL_AUTO: return "AUTO";
+    case FIRE_MODE_SINGLE:
+    default:                  return "SINGLE";
+  }
+}
+
+// --- Pure Logic: Compute starting tile column to horizontally centre a label ---
+// on a 16-tile-wide display given its length (in chars) and font scale.
+uint8_t centerTileCol( uint8_t labelLen, uint8_t scale )
+{
+  uint16_t widthTiles = (uint16_t)labelLen * scale;
+  if( widthTiles >= 16 ) return 0;
+  return ( 16 - widthTiles ) / 2;
 }
 
 // --- Solenoid Helpers (DRY: single cycle extracted) ---
@@ -352,75 +407,142 @@ bool pollEncoderButton()
   return false;
 }
 
-// --- Display Update (only redraws changed values to minimise I2C traffic) ---
-void updateDisplay( FireMode mode, unsigned long rpm, int burst, EncoderMode encMode, bool preRev, unsigned long preRevRPMVal, bool safe, float voltage )
+// --- Render full-screen PROGMEM splash via u8x8 tiles ---
+// Uses a 128-byte stack buffer (one tile row) so the splash can live in flash.
+void drawSplash()
 {
-  if( mode != displayedMode || safe != displayedSafe )
+  uint8_t buf[128];
+  for( uint8_t row = 0; row < 8; row++ )
   {
-    display.clearLine( 0 );
-    display.setCursor( 0, 0 );
-    display.print( getDisplayModeLabel( mode, safe ) );
-    displayedMode = mode;
-    displayedSafe = safe;
+    memcpy_P( buf, splash + row * 128, 128 );
+    display.drawTile( 0, row, 16, buf );
   }
+}
 
-  bool rpmChanged = hasRPMChanged( displayedRPM, rpm );
-  bool encModeChanged = ( encMode != displayedEncoderMode );
+// --- VIEW layout: 4 corners (RPM / Burst / PreRev / Battery) + centred mode ---
+void drawView( FireMode mode, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool safe, float voltage, bool fullRedraw )
+{
+  char buf[8];
 
-  if( rpmChanged || encModeChanged )
+  if( fullRedraw || hasRPMChanged( displayedRPM, rpm ) )
   {
-    display.clearLine( 2 );
-    display.setCursor( 0, 2 );
-    display.print( encMode == ENCODER_MODE_RPM ? ">" : " " );
-    display.print( "RPM: " );
-    display.print( rpm );
+    snprintf( buf, sizeof( buf ), "R:%-4lu", rpm );
+    display.drawString( 0, 0, buf );
     displayedRPM = rpm;
   }
 
-  if( burst != displayedBurstCount || encModeChanged )
+  if( fullRedraw || burst != displayedBurstCount )
   {
-    display.clearLine( 4 );
-    display.setCursor( 0, 4 );
-    display.print( encMode == ENCODER_MODE_BURST ? ">" : " " );
-    display.print( "Burst: " );
-    display.print( burst );
+    snprintf( buf, sizeof( buf ), "B:%2d", burst );
+    display.drawString( 12, 0, buf );
     displayedBurstCount = burst;
   }
 
-  if( encModeChanged )
+  if( fullRedraw || hasRPMChanged( displayedPreRevRPM, preRevRPMVal ) )
   {
-    displayedEncoderMode = encMode;
-  }
-
-  bool preRevRPMChanged = hasRPMChanged( displayedPreRevRPM, preRevRPMVal );
-
-  if( preRev != displayedPreRev || preRevRPMChanged || encModeChanged )
-  {
-    display.clearLine( 6 );
-    display.setCursor( 0, 6 );
-    display.print( encMode == ENCODER_MODE_PREREV ? ">" : " " );
-    display.print( "PRev:" );
-    if( preRev )
-    {
-      display.print( preRevRPMVal );
-    }
-    else
-    {
-      display.print( "OFF" );
-    }
-    displayedPreRev = preRev;
+    snprintf( buf, sizeof( buf ), "P:%-4lu", preRevRPMVal );
+    display.drawString( 0, 7, buf );
     displayedPreRevRPM = preRevRPMVal;
   }
 
-  if( hasVoltageChanged( displayedVoltage, voltage ) )
+  if( fullRedraw || hasVoltageChanged( displayedVoltage, voltage ) )
   {
-    char voltageBuf[17];
-    formatVoltageDisplay( voltage, voltageBuf, sizeof( voltageBuf ) );
-    display.clearLine( 7 );
-    display.setCursor( 0, 7 );
-    display.print( voltageBuf );
+    formatVoltageShort( voltage, buf, sizeof( buf ) );
+    display.drawString( 11, 7, buf );
     displayedVoltage = voltage;
   }
+
+  if( fullRedraw || mode != displayedMode || safe != displayedSafe )
+  {
+    // Clear the two tile rows the 2x2 label occupies before redrawing so
+    // longer->shorter label transitions do not leave stale characters.
+    display.clearLine( 3 );
+    display.clearLine( 4 );
+    const char* label = getCenterModeLabel( mode, safe );
+    uint8_t col = centerTileCol( (uint8_t)strlen( label ), 2 );
+    display.draw2x2String( col, 3, label );
+    displayedMode = mode;
+    displayedSafe = safe;
+  }
+}
+
+// --- MENU layout: header + 4 items with cursor ---
+void drawMenu( MenuItem selected, bool fullRedraw )
+{
+  if( fullRedraw )
+  {
+    display.clear();
+    display.drawString( centerTileCol( 4, 2 ), 0, "MENU" );
+  }
+
+  if( !fullRedraw && selected == displayedMenuSelection )
+    return;
+
+  static const MenuItem order[4] = { MENU_ITEM_RPM, MENU_ITEM_BURST, MENU_ITEM_PREREV, MENU_ITEM_BACK };
+  for( uint8_t i = 0; i < 4; i++ )
+  {
+    uint8_t row = 3 + i;
+    display.clearLine( row );
+    display.drawString( 2, row, order[i] == selected ? ">" : " " );
+    display.drawString( 4, row, getMenuItemLabel( order[i] ) );
+  }
+  displayedMenuSelection = selected;
+}
+
+// --- EDIT layout: header + large current value ---
+void drawEdit( MenuItem item, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool fullRedraw )
+{
+  char buf[8];
+
+  if( fullRedraw )
+  {
+    display.clear();
+    display.drawString( 0, 0, "EDIT " );
+    display.drawString( 5, 0, getMenuItemLabel( item ) );
+    display.drawString( 0, 7, "Click to save" );
+  }
+
+  switch( item )
+  {
+    case MENU_ITEM_BURST:
+      snprintf( buf, sizeof( buf ), "%d", burst );
+      break;
+    case MENU_ITEM_PREREV:
+      snprintf( buf, sizeof( buf ), "%lu", preRevRPMVal );
+      break;
+    case MENU_ITEM_RPM:
+    default:
+      snprintf( buf, sizeof( buf ), "%lu", rpm );
+      break;
+  }
+  display.clearLine( 3 );
+  display.clearLine( 4 );
+  uint8_t col = centerTileCol( (uint8_t)strlen( buf ), 2 );
+  display.draw2x2String( col, 3, buf );
+}
+
+// --- Display dispatcher (clears on state change; dirty-checks within state) ---
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool safe, float voltage )
+{
+  bool stateChanged = ( displayState != displayedState );
+  if( stateChanged && displayState == DISPLAY_VIEW )
+    display.clear();
+
+  switch( displayState )
+  {
+    case DISPLAY_MENU:
+      drawMenu( menuSelection, stateChanged );
+      break;
+    case DISPLAY_EDIT:
+      drawEdit( menuSelection, rpm, burst, preRevRPMVal, stateChanged );
+      break;
+    case DISPLAY_VIEW:
+    default:
+      drawView( mode, rpm, burst, preRevRPMVal, safe, voltage, stateChanged );
+      break;
+  }
+
+  displayedState = displayState;
 }
 
 // --- Setup ---
@@ -439,10 +561,7 @@ void setup()
 
   display.begin();
   display.setFont( u8x8_font_chroma48medium8_r );
-  display.setCursor( 0, 0 );
-  display.print( "PHANTASM" );
-  display.setCursor( 0, 2 );
-  display.print( "Initialising..." );
+  drawSplash();
 
   delay( 1000 );
 
@@ -472,18 +591,53 @@ void setup()
   CalibrateFlywheels();
 
   display.clear();
+  displayState = DISPLAY_VIEW;
+  displayedState = DISPLAY_VIEW;
+  menuSelection = MENU_ITEM_RPM;
+  displayedMenuSelection = MENU_ITEM_RPM;
   displayedMode = FIRE_MODE_SINGLE;
   displayedSafe = false;
   displayedRPM = 0;
   displayedBurstCount = 0;
-  displayedEncoderMode = ENCODER_MODE_RPM;
-  displayedPreRev = false;
   displayedPreRevRPM = 0;
   displayedVoltage = -1.0;
+  lastActivityMs = millis();
 
   // Ensure the debounce period has already "elapsed" so the very first button
   // press in loop() registers immediately, regardless of how quickly setup() ran.
   lastButtonDebounceTime = millis() - ( BUTTON_DEBOUNCE_MS + 1 );
+}
+
+// --- Apply encoder rotation to currently-selected parameter in EDIT state ---
+void applyEditRotation( MenuItem item, int direction )
+{
+  if( direction == 0 )
+    return;
+
+  if( item == MENU_ITEM_RPM )
+  {
+    unsigned long newRPM = calculateEncoderRPM( motorRPM, direction, ENCODER_RPM_STEP, MOTOR_RPM_MIN, MOTOR_RPM_MAX );
+    if( hasRPMChanged( motorRPM, newRPM ) )
+    {
+      motorRPM = newRPM;
+      if( !idling )
+        FlyshotSetNewMotorSpeed( motorRPM );
+    }
+  }
+  else if( item == MENU_ITEM_BURST )
+  {
+    burstCount = calculateEncoderBurst( burstCount, direction, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX );
+  }
+  else if( item == MENU_ITEM_PREREV )
+  {
+    unsigned long newPreRevRPM = calculateEncoderPreRevRPM( preRevRPM, direction, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX );
+    if( hasRPMChanged( preRevRPM, newPreRevRPM ) )
+    {
+      preRevRPM = newPreRevRPM;
+      if( idling )
+        FlyshotSetNewMotorSpeed( preRevRPM );
+    }
+  }
 }
 
 // --- Main Loop ---
@@ -493,46 +647,34 @@ void loop()
   if( currentVoltage < MIN_BATTERY_VOLTAGE )
     return;
 
-  // Poll encoder button for mode toggle
-  if( pollEncoderButton() )
+  // Encoder button drives the VIEW <-> MENU <-> EDIT state machine
+  bool clicked = pollEncoderButton();
+  if( clicked )
   {
-    encoderMode = toggleEncoderMode( encoderMode );
+    displayState = transitionDisplayState( displayState, menuSelection, true );
+    lastActivityMs = millis();
   }
 
-  // Poll encoder rotation for parameter adjustment
+  // Encoder rotation is routed by current display state
   int encoderDir = pollEncoderDirection();
   if( encoderDir != 0 )
   {
-    if( encoderMode == ENCODER_MODE_RPM )
+    lastActivityMs = millis();
+    if( displayState == DISPLAY_MENU )
     {
-      unsigned long newRPM = calculateEncoderRPM( motorRPM, encoderDir, ENCODER_RPM_STEP, MOTOR_RPM_MIN, MOTOR_RPM_MAX );
-      if( hasRPMChanged( motorRPM, newRPM ) )
-      {
-        motorRPM = newRPM;
-        // Only update motor speed if not idling at pre-rev RPM
-        if( !idling )
-        {
-          FlyshotSetNewMotorSpeed( motorRPM );
-        }
-      }
+      menuSelection = cycleMenuItem( menuSelection, encoderDir );
     }
-    else if( encoderMode == ENCODER_MODE_BURST )
+    else if( displayState == DISPLAY_EDIT )
     {
-      burstCount = calculateEncoderBurst( burstCount, encoderDir, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX );
+      applyEditRotation( menuSelection, encoderDir );
     }
-    else if( encoderMode == ENCODER_MODE_PREREV )
-    {
-      unsigned long newPreRevRPM = calculateEncoderPreRevRPM( preRevRPM, encoderDir, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX );
-      if( hasRPMChanged( preRevRPM, newPreRevRPM ) )
-      {
-        preRevRPM = newPreRevRPM;
-        // Update the idling speed immediately if currently idling
-        if( idling )
-        {
-          FlyshotSetNewMotorSpeed( preRevRPM );
-        }
-      }
-    }
+    // Rotation in VIEW is ignored; the menu is the only place to edit values.
+  }
+
+  // Fall back to VIEW after inactivity in MENU/EDIT
+  if( displayState != DISPLAY_VIEW && isMenuTimeoutExpired( lastActivityMs, millis(), DISPLAY_MENU_TIMEOUT_MS ) )
+  {
+    displayState = DISPLAY_VIEW;
   }
 
   FireMode mode = getFireMode(
@@ -543,7 +685,14 @@ void loop()
   bool preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
   bool mp5SlapSafe = isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH );
 
-  updateDisplay( mode, motorRPM, burstCount, encoderMode, preRevActive, preRevRPM, !mp5SlapSafe, currentVoltage );
+  // Any firing/prerev activity snaps the UI back to the default VIEW so the
+  // operator can see live stats rather than a stale edit screen.
+  if( ( digitalRead( PIN_TRIGGER ) == LOW || preRevActive ) && displayState != DISPLAY_VIEW )
+  {
+    displayState = DISPLAY_VIEW;
+  }
+
+  updateDisplay( mode, motorRPM, burstCount, preRevRPM, !mp5SlapSafe, currentVoltage );
 
   if( !mp5SlapSafe )
   {

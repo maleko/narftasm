@@ -9,12 +9,23 @@ enum FireMode {
   FIRE_MODE_FULL_AUTO
 };
 
-// ---- Encoder mode enum (must match implementation) ----
-enum EncoderMode {
-  ENCODER_MODE_RPM,
-  ENCODER_MODE_BURST,
-  ENCODER_MODE_PREREV
+// ---- Display state enum (must match implementation) ----
+enum DisplayState {
+  DISPLAY_VIEW,
+  DISPLAY_MENU,
+  DISPLAY_EDIT
 };
+
+// ---- Menu item enum (must match implementation) ----
+enum MenuItem {
+  MENU_ITEM_RPM,
+  MENU_ITEM_BURST,
+  MENU_ITEM_PREREV,
+  MENU_ITEM_BACK,
+  MENU_ITEM_COUNT
+};
+
+#define DISPLAY_MENU_TIMEOUT_MS 10000UL
 
 #define PRE_REV_RPM_DEFAULT 3000
 #define PRE_REV_RPM_MIN 2000
@@ -35,16 +46,20 @@ unsigned long clampRPM( long rpm, unsigned long minRPM, unsigned long maxRPM );
 unsigned long calculateEncoderRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 const char* getFireModeLabel( FireMode mode );
 bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM );
-EncoderMode toggleEncoderMode( EncoderMode currentMode );
 int clampBurstCount( int count, int minCount, int maxCount );
 int calculateEncoderBurst( int currentCount, int direction, int stepSize, int minCount, int maxCount );
-const char* getEncoderModeLabel( EncoderMode mode );
 bool isPreRevActive( bool pinHigh );
 bool isMp5SlapSafe( bool pinHigh );
 const char* getDisplayModeLabel( FireMode mode, bool safe );
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
-void formatVoltageDisplay( float voltage, char* buf, size_t bufSize );
 bool hasVoltageChanged( float oldVoltage, float newVoltage );
+DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bool clicked );
+MenuItem cycleMenuItem( MenuItem current, int direction );
+bool isMenuTimeoutExpired( uint32_t lastActivityMs, uint32_t nowMs, uint32_t timeoutMs );
+const char* getMenuItemLabel( MenuItem item );
+uint8_t centerTileCol( uint8_t labelLen, uint8_t scale );
+void formatVoltageShort( float voltage, char* buf, size_t bufSize );
+const char* getCenterModeLabel( FireMode mode, bool safe );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -305,40 +320,6 @@ void testHasRPMChangedFalse()
   assertBool( "hasRPMChanged: same values returns false", false, hasRPMChanged( 5000, 5000 ) );
 }
 
-// ---- Encoder Mode Toggle Tests ----
-
-void testToggleEncoderModeFromRPMToBurst()
-{
-  assertEq( "toggleEncoderMode: RPM -> BURST", ENCODER_MODE_BURST, toggleEncoderMode( ENCODER_MODE_RPM ) );
-}
-
-void testToggleEncoderModeFromBurstToPreRev()
-{
-  assertEq( "toggleEncoderMode: BURST -> PREREV", ENCODER_MODE_PREREV, toggleEncoderMode( ENCODER_MODE_BURST ) );
-}
-
-void testToggleEncoderModeFromPreRevToRPM()
-{
-  assertEq( "toggleEncoderMode: PREREV -> RPM", ENCODER_MODE_RPM, toggleEncoderMode( ENCODER_MODE_PREREV ) );
-}
-
-// ---- Encoder Mode Label Tests ----
-
-void testGetEncoderModeLabelRPM()
-{
-  assertStrEq( "getEncoderModeLabel: RPM", "RPM", getEncoderModeLabel( ENCODER_MODE_RPM ) );
-}
-
-void testGetEncoderModeLabelBurst()
-{
-  assertStrEq( "getEncoderModeLabel: BURST", "BURST", getEncoderModeLabel( ENCODER_MODE_BURST ) );
-}
-
-void testGetEncoderModeLabelPreRev()
-{
-  assertStrEq( "getEncoderModeLabel: PREREV", "PREREV", getEncoderModeLabel( ENCODER_MODE_PREREV ) );
-}
-
 // ---- Burst Count Clamping Tests ----
 
 void testClampBurstCountWithinRange()
@@ -464,15 +445,6 @@ void testCalculateEncoderPreRevRPMClampsAtMin()
     calculateEncoderPreRevRPM( PRE_REV_RPM_MIN, -1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
 }
 
-// ---- Encoder Mode Enum Values ----
-
-void testEncoderModeEnumValues()
-{
-  assertEq( "ENCODER_MODE_RPM is 0", 0, ENCODER_MODE_RPM );
-  assertEq( "ENCODER_MODE_BURST is 1", 1, ENCODER_MODE_BURST );
-  assertEq( "ENCODER_MODE_PREREV is 2", 2, ENCODER_MODE_PREREV );
-}
-
 // ---- Burst Count Default ----
 
 void testBurstCountDefault()
@@ -504,50 +476,6 @@ void assertFloatEq( const char* testName, float expected, float actual, float to
   }
 }
 
-void testFormatVoltageDisplayNormal()
-{
-  char buf[17];
-  formatVoltageDisplay( 16.8, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 16.8V formats correctly", "Bat:16.8V", buf );
-}
-
-void testFormatVoltageDisplayLow()
-{
-  char buf[17];
-  formatVoltageDisplay( 12.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 12.0V formats correctly", "Bat:12.0V", buf );
-}
-
-void testFormatVoltageDisplaySingleDigit()
-{
-  char buf[17];
-  formatVoltageDisplay( 9.5, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 9.5V formats correctly", "Bat: 9.5V", buf );
-}
-
-void testFormatVoltageDisplayZero()
-{
-  char buf[17];
-  formatVoltageDisplay( 0.0, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 0.0V formats correctly", "Bat: 0.0V", buf );
-}
-
-void testFormatVoltageDisplayRoundingCarry()
-{
-  char buf[17];
-  // 16.95 rounds up to 17.0 at one-decimal resolution
-  formatVoltageDisplay( 16.95, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 16.95 rounds to 17.0V", "Bat:17.0V", buf );
-}
-
-void testFormatVoltageDisplayRoundingCarrySingleDigit()
-{
-  char buf[17];
-  // 9.95 rounds up to 10.0 at one-decimal resolution
-  formatVoltageDisplay( 9.95, buf, sizeof( buf ) );
-  assertStrEq( "formatVoltageDisplay: 9.95 rounds to 10.0V", "Bat:10.0V", buf );
-}
-
 void testHasVoltageChangedTrue()
 {
   assertBool( "hasVoltageChanged: different values returns true", true, hasVoltageChanged( 16.8, 16.7 ) );
@@ -568,6 +496,159 @@ void testHasVoltageChangedAcrossRounding()
 {
   // Values that round to different one-decimal places should trigger a change
   assertBool( "hasVoltageChanged: across rounding boundary returns true", true, hasVoltageChanged( 16.84, 16.86 ) );
+}
+
+// ---- Display State / Menu Tests ----
+
+void testDisplayStateEnumValues()
+{
+  assertEq( "DISPLAY_VIEW is 0", 0, DISPLAY_VIEW );
+  assertEq( "DISPLAY_MENU is 1", 1, DISPLAY_MENU );
+  assertEq( "DISPLAY_EDIT is 2", 2, DISPLAY_EDIT );
+}
+
+void testMenuItemEnumValues()
+{
+  assertEq( "MENU_ITEM_RPM is 0", 0, MENU_ITEM_RPM );
+  assertEq( "MENU_ITEM_BURST is 1", 1, MENU_ITEM_BURST );
+  assertEq( "MENU_ITEM_PREREV is 2", 2, MENU_ITEM_PREREV );
+  assertEq( "MENU_ITEM_BACK is 3", 3, MENU_ITEM_BACK );
+  assertEq( "MENU_ITEM_COUNT is 4", 4, MENU_ITEM_COUNT );
+}
+
+void testTransitionViewToMenuOnClick()
+{
+  assertEq( "VIEW + click -> MENU", DISPLAY_MENU, transitionDisplayState( DISPLAY_VIEW, MENU_ITEM_RPM, true ) );
+}
+
+void testTransitionViewStaysViewWithoutClick()
+{
+  assertEq( "VIEW + no click stays VIEW", DISPLAY_VIEW, transitionDisplayState( DISPLAY_VIEW, MENU_ITEM_RPM, false ) );
+}
+
+void testTransitionMenuToEditOnClickRPM()
+{
+  assertEq( "MENU + click on RPM -> EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_RPM, true ) );
+}
+
+void testTransitionMenuToEditOnClickBurst()
+{
+  assertEq( "MENU + click on Burst -> EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_BURST, true ) );
+}
+
+void testTransitionMenuToEditOnClickPreRev()
+{
+  assertEq( "MENU + click on PreRev -> EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_PREREV, true ) );
+}
+
+void testTransitionMenuToViewOnClickBack()
+{
+  assertEq( "MENU + click on Back -> VIEW", DISPLAY_VIEW, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_BACK, true ) );
+}
+
+void testTransitionMenuStaysMenuWithoutClick()
+{
+  assertEq( "MENU + no click stays MENU", DISPLAY_MENU, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_RPM, false ) );
+}
+
+void testTransitionEditToMenuOnClick()
+{
+  assertEq( "EDIT + click -> MENU", DISPLAY_MENU, transitionDisplayState( DISPLAY_EDIT, MENU_ITEM_RPM, true ) );
+}
+
+void testTransitionEditStaysEditWithoutClick()
+{
+  assertEq( "EDIT + no click stays EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_EDIT, MENU_ITEM_RPM, false ) );
+}
+
+void testCycleMenuItemForward()
+{
+  assertEq( "cycleMenuItem RPM +1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_RPM, 1 ) );
+  assertEq( "cycleMenuItem BURST +1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_BURST, 1 ) );
+  assertEq( "cycleMenuItem PREREV +1 -> BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_PREREV, 1 ) );
+  assertEq( "cycleMenuItem BACK +1 wraps to RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BACK, 1 ) );
+}
+
+void testCycleMenuItemBackward()
+{
+  assertEq( "cycleMenuItem RPM -1 wraps to BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_RPM, -1 ) );
+  assertEq( "cycleMenuItem BURST -1 -> RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BURST, -1 ) );
+  assertEq( "cycleMenuItem PREREV -1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_PREREV, -1 ) );
+  assertEq( "cycleMenuItem BACK -1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_BACK, -1 ) );
+}
+
+void testCycleMenuItemNoDirection()
+{
+  assertEq( "cycleMenuItem RPM 0 stays RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_RPM, 0 ) );
+}
+
+void testMenuTimeoutNotExpired()
+{
+  assertBool( "menu timeout not expired at 9.9s", false, isMenuTimeoutExpired( 0, 9999, DISPLAY_MENU_TIMEOUT_MS ) );
+}
+
+void testMenuTimeoutExpiredAtBoundary()
+{
+  assertBool( "menu timeout expired exactly at 10s", true, isMenuTimeoutExpired( 0, 10000, DISPLAY_MENU_TIMEOUT_MS ) );
+}
+
+void testMenuTimeoutExpiredPast()
+{
+  assertBool( "menu timeout expired at 11s", true, isMenuTimeoutExpired( 0, 11000, DISPLAY_MENU_TIMEOUT_MS ) );
+}
+
+void testMenuTimeoutHandlesMillisRollover()
+{
+  // 21 ms elapsed across rollover, 10 ms timeout -> expired
+  assertBool( "menu timeout handles millis() rollover (expired)", true, isMenuTimeoutExpired( 0xFFFFFFF0UL, 5UL, 10UL ) );
+  // 21 ms elapsed across rollover, 100 ms timeout -> not expired
+  assertBool( "menu timeout handles millis() rollover (not expired)", false, isMenuTimeoutExpired( 0xFFFFFFF0UL, 5UL, 100UL ) );
+}
+
+void testGetMenuItemLabel()
+{
+  assertStrEq( "menu label RPM", "RPM", getMenuItemLabel( MENU_ITEM_RPM ) );
+  assertStrEq( "menu label Burst", "Burst", getMenuItemLabel( MENU_ITEM_BURST ) );
+  assertStrEq( "menu label PreRev", "PreRev", getMenuItemLabel( MENU_ITEM_PREREV ) );
+  assertStrEq( "menu label Back", "Back", getMenuItemLabel( MENU_ITEM_BACK ) );
+}
+
+void testCenterTileColScaled2x()
+{
+  assertEq( "centerTileCol SINGLE (6ch,2x) -> 2", 2, centerTileCol( 6, 2 ) );
+  assertEq( "centerTileCol BURST (5ch,2x) -> 3", 3, centerTileCol( 5, 2 ) );
+  assertEq( "centerTileCol AUTO (4ch,2x) -> 4", 4, centerTileCol( 4, 2 ) );
+}
+
+void testCenterTileColScaled1x()
+{
+  assertEq( "centerTileCol 16ch 1x exact fit -> 0", 0, centerTileCol( 16, 1 ) );
+  assertEq( "centerTileCol 17ch 1x overflow -> 0", 0, centerTileCol( 17, 1 ) );
+}
+
+void testFormatVoltageShort()
+{
+  char buf[8];
+  formatVoltageShort( 16.8, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageShort 16.8 -> '16.8V'", "16.8V", buf );
+  formatVoltageShort( 9.5, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageShort 9.5 -> ' 9.5V'", " 9.5V", buf );
+  formatVoltageShort( 10.0, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageShort 10.0 -> '10.0V'", "10.0V", buf );
+  formatVoltageShort( 0.0, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageShort 0.0 -> ' 0.0V'", " 0.0V", buf );
+  formatVoltageShort( 16.95, buf, sizeof( buf ) );
+  assertStrEq( "formatVoltageShort 16.95 rounds to '17.0V'", "17.0V", buf );
+}
+
+void testGetCenterModeLabel()
+{
+  assertStrEq( "center label SINGLE unsafe", "SINGLE", getCenterModeLabel( FIRE_MODE_SINGLE, false ) );
+  assertStrEq( "center label BURST unsafe", "BURST", getCenterModeLabel( FIRE_MODE_BURST, false ) );
+  assertStrEq( "center label FULL_AUTO -> AUTO", "AUTO", getCenterModeLabel( FIRE_MODE_FULL_AUTO, false ) );
+  assertStrEq( "center label safe override SINGLE", "SAFE", getCenterModeLabel( FIRE_MODE_SINGLE, true ) );
+  assertStrEq( "center label safe override BURST", "SAFE", getCenterModeLabel( FIRE_MODE_BURST, true ) );
+  assertStrEq( "center label safe override AUTO", "SAFE", getCenterModeLabel( FIRE_MODE_FULL_AUTO, true ) );
 }
 
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
@@ -617,15 +698,6 @@ bool hasRPMChanged( unsigned long oldRPM, unsigned long newRPM )
   return oldRPM != newRPM;
 }
 
-EncoderMode toggleEncoderMode( EncoderMode currentMode )
-{
-  if( currentMode == ENCODER_MODE_RPM )
-    return ENCODER_MODE_BURST;
-  if( currentMode == ENCODER_MODE_BURST )
-    return ENCODER_MODE_PREREV;
-  return ENCODER_MODE_RPM;
-}
-
 int clampBurstCount( int count, int minCount, int maxCount )
 {
   if( count < minCount ) return minCount;
@@ -637,17 +709,6 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
 {
   int newCount = currentCount + ( direction * stepSize );
   return clampBurstCount( newCount, minCount, maxCount );
-}
-
-const char* getEncoderModeLabel( EncoderMode mode )
-{
-  switch( mode )
-  {
-    case ENCODER_MODE_BURST:  return "BURST";
-    case ENCODER_MODE_PREREV: return "PREREV";
-    case ENCODER_MODE_RPM:
-    default:                  return "RPM";
-  }
 }
 
 unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM )
@@ -666,24 +727,82 @@ bool isMp5SlapSafe( bool pinHigh )
   return !pinHigh;
 }
 
-void formatVoltageDisplay( float voltage, char* buf, size_t bufSize )
-{
-  // Format as "Bat:XX.XV" with leading space for single-digit voltages
-  int tenths = (int)( voltage * 10 + 0.5 );
-  int whole = tenths / 10;
-  int frac = tenths % 10;
-  if( whole < 10 )
-    snprintf( buf, bufSize, "Bat: %d.%dV", whole, frac );
-  else
-    snprintf( buf, bufSize, "Bat:%d.%dV", whole, frac );
-}
-
 bool hasVoltageChanged( float oldVoltage, float newVoltage )
 {
   // Only consider changed if the displayed one-decimal digit differs
   int oldTenths = (int)( oldVoltage * 10 + 0.5 );
   int newTenths = (int)( newVoltage * 10 + 0.5 );
   return oldTenths != newTenths;
+}
+
+DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bool clicked )
+{
+  if( !clicked )
+    return current;
+  if( current == DISPLAY_VIEW )
+    return DISPLAY_MENU;
+  if( current == DISPLAY_MENU )
+    return ( selected == MENU_ITEM_BACK ) ? DISPLAY_VIEW : DISPLAY_EDIT;
+  return DISPLAY_MENU;
+}
+
+MenuItem cycleMenuItem( MenuItem current, int direction )
+{
+  if( direction == 0 )
+    return current;
+  int idx = (int)current + direction;
+  while( idx < 0 ) idx += MENU_ITEM_COUNT;
+  while( idx >= MENU_ITEM_COUNT ) idx -= MENU_ITEM_COUNT;
+  return (MenuItem)idx;
+}
+
+bool isMenuTimeoutExpired( uint32_t lastActivityMs, uint32_t nowMs, uint32_t timeoutMs )
+{
+  // uint32_t subtraction wraps modulo 2^32, matching AVR millis() semantics
+  return ( nowMs - lastActivityMs ) >= timeoutMs;
+}
+
+const char* getMenuItemLabel( MenuItem item )
+{
+  switch( item )
+  {
+    case MENU_ITEM_BURST:  return "Burst";
+    case MENU_ITEM_PREREV: return "PreRev";
+    case MENU_ITEM_BACK:   return "Back";
+    case MENU_ITEM_RPM:
+    default:               return "RPM";
+  }
+}
+
+uint8_t centerTileCol( uint8_t labelLen, uint8_t scale )
+{
+  uint16_t widthTiles = (uint16_t)labelLen * scale;
+  if( widthTiles >= 16 ) return 0;
+  return ( 16 - widthTiles ) / 2;
+}
+
+void formatVoltageShort( float voltage, char* buf, size_t bufSize )
+{
+  // Compact 5-char voltage: "XX.XV" with leading space when single-digit whole
+  int tenths = (int)( voltage * 10 + 0.5 );
+  int whole = tenths / 10;
+  int frac = tenths % 10;
+  if( whole < 10 )
+    snprintf( buf, bufSize, " %d.%dV", whole, frac );
+  else
+    snprintf( buf, bufSize, "%d.%dV", whole, frac );
+}
+
+const char* getCenterModeLabel( FireMode mode, bool safe )
+{
+  if( safe ) return "SAFE";
+  switch( mode )
+  {
+    case FIRE_MODE_BURST:     return "BURST";
+    case FIRE_MODE_FULL_AUTO: return "AUTO";
+    case FIRE_MODE_SINGLE:
+    default:                  return "SINGLE";
+  }
 }
 
 void setup()
@@ -750,15 +869,6 @@ void setup()
   testCalculateEncoderPreRevRPMClampsAtMax();
   testCalculateEncoderPreRevRPMClampsAtMin();
 
-  // Encoder mode tests
-  testEncoderModeEnumValues();
-  testToggleEncoderModeFromRPMToBurst();
-  testToggleEncoderModeFromBurstToPreRev();
-  testToggleEncoderModeFromPreRevToRPM();
-  testGetEncoderModeLabelRPM();
-  testGetEncoderModeLabelBurst();
-  testGetEncoderModeLabelPreRev();
-
   // Burst count tests
   testBurstCountDefault();
   testClampBurstCountWithinRange();
@@ -772,16 +882,35 @@ void setup()
   testCalculateEncoderBurstNoDirection();
 
   // Voltage display tests
-  testFormatVoltageDisplayNormal();
-  testFormatVoltageDisplayLow();
-  testFormatVoltageDisplaySingleDigit();
-  testFormatVoltageDisplayZero();
-  testFormatVoltageDisplayRoundingCarry();
-  testFormatVoltageDisplayRoundingCarrySingleDigit();
   testHasVoltageChangedTrue();
   testHasVoltageChangedFalse();
   testHasVoltageChangedWithinTolerance();
   testHasVoltageChangedAcrossRounding();
+
+  // Display state / menu tests
+  testDisplayStateEnumValues();
+  testMenuItemEnumValues();
+  testTransitionViewToMenuOnClick();
+  testTransitionViewStaysViewWithoutClick();
+  testTransitionMenuToEditOnClickRPM();
+  testTransitionMenuToEditOnClickBurst();
+  testTransitionMenuToEditOnClickPreRev();
+  testTransitionMenuToViewOnClickBack();
+  testTransitionMenuStaysMenuWithoutClick();
+  testTransitionEditToMenuOnClick();
+  testTransitionEditStaysEditWithoutClick();
+  testCycleMenuItemForward();
+  testCycleMenuItemBackward();
+  testCycleMenuItemNoDirection();
+  testMenuTimeoutNotExpired();
+  testMenuTimeoutExpiredAtBoundary();
+  testMenuTimeoutExpiredPast();
+  testMenuTimeoutHandlesMillisRollover();
+  testGetMenuItemLabel();
+  testCenterTileColScaled2x();
+  testCenterTileColScaled1x();
+  testFormatVoltageShort();
+  testGetCenterModeLabel();
 
   Serial.println();
   Serial.println( "=== Results ===" );
