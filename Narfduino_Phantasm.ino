@@ -45,7 +45,8 @@ enum FireMode {
 enum DisplayState {
   DISPLAY_VIEW,
   DISPLAY_MENU,
-  DISPLAY_EDIT
+  DISPLAY_EDIT,
+  DISPLAY_ABOUT
 };
 
 // --- Menu Item Enum ---
@@ -53,6 +54,7 @@ enum MenuItem {
   MENU_ITEM_RPM,
   MENU_ITEM_BURST,
   MENU_ITEM_PREREV,
+  MENU_ITEM_ABOUT,
   MENU_ITEM_BACK,
   MENU_ITEM_COUNT
 };
@@ -241,7 +243,11 @@ DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bo
   if( current == DISPLAY_VIEW )
     return DISPLAY_MENU;
   if( current == DISPLAY_MENU )
-    return ( selected == MENU_ITEM_BACK ) ? DISPLAY_VIEW : DISPLAY_EDIT;
+  {
+    if( selected == MENU_ITEM_BACK )  return DISPLAY_VIEW;
+    if( selected == MENU_ITEM_ABOUT ) return DISPLAY_ABOUT;
+    return DISPLAY_EDIT;
+  }
   return DISPLAY_MENU;
 }
 
@@ -269,6 +275,7 @@ const char* getMenuItemLabel( MenuItem item )
   {
     case MENU_ITEM_BURST:  return "Burst";
     case MENU_ITEM_PREREV: return "PreRev";
+    case MENU_ITEM_ABOUT:  return "About";
     case MENU_ITEM_BACK:   return "Back";
     case MENU_ITEM_RPM:
     default:               return "RPM";
@@ -466,7 +473,7 @@ void drawView( FireMode mode, unsigned long rpm, int burst, unsigned long preRev
   }
 }
 
-// --- MENU layout: header + 4 items with cursor ---
+// --- MENU layout: header + items with cursor ---
 void drawMenu( MenuItem selected, bool fullRedraw )
 {
   if( fullRedraw )
@@ -478,8 +485,8 @@ void drawMenu( MenuItem selected, bool fullRedraw )
   if( !fullRedraw && selected == displayedMenuSelection )
     return;
 
-  static const MenuItem order[4] = { MENU_ITEM_RPM, MENU_ITEM_BURST, MENU_ITEM_PREREV, MENU_ITEM_BACK };
-  for( uint8_t i = 0; i < 4; i++ )
+  static const MenuItem order[5] = { MENU_ITEM_RPM, MENU_ITEM_BURST, MENU_ITEM_PREREV, MENU_ITEM_ABOUT, MENU_ITEM_BACK };
+  for( uint8_t i = 0; i < 5; i++ )
   {
     uint8_t row = 3 + i;
     display.clearLine( row );
@@ -487,6 +494,21 @@ void drawMenu( MenuItem selected, bool fullRedraw )
     display.drawString( 4, row, getMenuItemLabel( order[i] ) );
   }
   displayedMenuSelection = selected;
+}
+
+// --- ABOUT layout: static credits text, word-wrapped to 16-tile width ---
+void drawAbout( bool fullRedraw )
+{
+  if( !fullRedraw )
+    return;
+  display.clear();
+  display.drawString( 0, 0, "Owned by: Eluhim" );
+  display.drawString( 0, 1, "Made by: Maleko" );
+  display.drawString( 0, 3, "Thanks Airzone-" );
+  display.drawString( 0, 4, "sama for the" );
+  display.drawString( 0, 5, "Narfduino NBC &" );
+  display.drawString( 0, 6, "Gifd for the" );
+  display.drawString( 0, 7, "Phantasm design" );
 }
 
 // --- EDIT layout: header + large current value ---
@@ -535,6 +557,9 @@ void updateDisplay( FireMode mode, unsigned long rpm, int burst, unsigned long p
       break;
     case DISPLAY_EDIT:
       drawEdit( menuSelection, rpm, burst, preRevRPMVal, stateChanged );
+      break;
+    case DISPLAY_ABOUT:
+      drawAbout( stateChanged );
       break;
     case DISPLAY_VIEW:
     default:

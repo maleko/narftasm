@@ -13,7 +13,8 @@ enum FireMode {
 enum DisplayState {
   DISPLAY_VIEW,
   DISPLAY_MENU,
-  DISPLAY_EDIT
+  DISPLAY_EDIT,
+  DISPLAY_ABOUT
 };
 
 // ---- Menu item enum (must match implementation) ----
@@ -21,6 +22,7 @@ enum MenuItem {
   MENU_ITEM_RPM,
   MENU_ITEM_BURST,
   MENU_ITEM_PREREV,
+  MENU_ITEM_ABOUT,
   MENU_ITEM_BACK,
   MENU_ITEM_COUNT
 };
@@ -505,6 +507,7 @@ void testDisplayStateEnumValues()
   assertEq( "DISPLAY_VIEW is 0", 0, DISPLAY_VIEW );
   assertEq( "DISPLAY_MENU is 1", 1, DISPLAY_MENU );
   assertEq( "DISPLAY_EDIT is 2", 2, DISPLAY_EDIT );
+  assertEq( "DISPLAY_ABOUT is 3", 3, DISPLAY_ABOUT );
 }
 
 void testMenuItemEnumValues()
@@ -512,8 +515,9 @@ void testMenuItemEnumValues()
   assertEq( "MENU_ITEM_RPM is 0", 0, MENU_ITEM_RPM );
   assertEq( "MENU_ITEM_BURST is 1", 1, MENU_ITEM_BURST );
   assertEq( "MENU_ITEM_PREREV is 2", 2, MENU_ITEM_PREREV );
-  assertEq( "MENU_ITEM_BACK is 3", 3, MENU_ITEM_BACK );
-  assertEq( "MENU_ITEM_COUNT is 4", 4, MENU_ITEM_COUNT );
+  assertEq( "MENU_ITEM_ABOUT is 3", 3, MENU_ITEM_ABOUT );
+  assertEq( "MENU_ITEM_BACK is 4", 4, MENU_ITEM_BACK );
+  assertEq( "MENU_ITEM_COUNT is 5", 5, MENU_ITEM_COUNT );
 }
 
 void testTransitionViewToMenuOnClick()
@@ -565,7 +569,8 @@ void testCycleMenuItemForward()
 {
   assertEq( "cycleMenuItem RPM +1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_RPM, 1 ) );
   assertEq( "cycleMenuItem BURST +1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_BURST, 1 ) );
-  assertEq( "cycleMenuItem PREREV +1 -> BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_PREREV, 1 ) );
+  assertEq( "cycleMenuItem PREREV +1 -> ABOUT", MENU_ITEM_ABOUT, cycleMenuItem( MENU_ITEM_PREREV, 1 ) );
+  assertEq( "cycleMenuItem ABOUT +1 -> BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_ABOUT, 1 ) );
   assertEq( "cycleMenuItem BACK +1 wraps to RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BACK, 1 ) );
 }
 
@@ -574,7 +579,8 @@ void testCycleMenuItemBackward()
   assertEq( "cycleMenuItem RPM -1 wraps to BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_RPM, -1 ) );
   assertEq( "cycleMenuItem BURST -1 -> RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BURST, -1 ) );
   assertEq( "cycleMenuItem PREREV -1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_PREREV, -1 ) );
-  assertEq( "cycleMenuItem BACK -1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_BACK, -1 ) );
+  assertEq( "cycleMenuItem ABOUT -1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_ABOUT, -1 ) );
+  assertEq( "cycleMenuItem BACK -1 -> ABOUT", MENU_ITEM_ABOUT, cycleMenuItem( MENU_ITEM_BACK, -1 ) );
 }
 
 void testCycleMenuItemNoDirection()
@@ -610,7 +616,23 @@ void testGetMenuItemLabel()
   assertStrEq( "menu label RPM", "RPM", getMenuItemLabel( MENU_ITEM_RPM ) );
   assertStrEq( "menu label Burst", "Burst", getMenuItemLabel( MENU_ITEM_BURST ) );
   assertStrEq( "menu label PreRev", "PreRev", getMenuItemLabel( MENU_ITEM_PREREV ) );
+  assertStrEq( "menu label About", "About", getMenuItemLabel( MENU_ITEM_ABOUT ) );
   assertStrEq( "menu label Back", "Back", getMenuItemLabel( MENU_ITEM_BACK ) );
+}
+
+void testTransitionMenuToAboutOnClickAbout()
+{
+  assertEq( "MENU + click on About -> ABOUT", DISPLAY_ABOUT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_ABOUT, true ) );
+}
+
+void testTransitionAboutToMenuOnClick()
+{
+  assertEq( "ABOUT + click -> MENU", DISPLAY_MENU, transitionDisplayState( DISPLAY_ABOUT, MENU_ITEM_ABOUT, true ) );
+}
+
+void testTransitionAboutStaysAboutWithoutClick()
+{
+  assertEq( "ABOUT + no click stays ABOUT", DISPLAY_ABOUT, transitionDisplayState( DISPLAY_ABOUT, MENU_ITEM_ABOUT, false ) );
 }
 
 void testCenterTileColScaled2x()
@@ -742,7 +764,11 @@ DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bo
   if( current == DISPLAY_VIEW )
     return DISPLAY_MENU;
   if( current == DISPLAY_MENU )
-    return ( selected == MENU_ITEM_BACK ) ? DISPLAY_VIEW : DISPLAY_EDIT;
+  {
+    if( selected == MENU_ITEM_BACK )  return DISPLAY_VIEW;
+    if( selected == MENU_ITEM_ABOUT ) return DISPLAY_ABOUT;
+    return DISPLAY_EDIT;
+  }
   return DISPLAY_MENU;
 }
 
@@ -768,6 +794,7 @@ const char* getMenuItemLabel( MenuItem item )
   {
     case MENU_ITEM_BURST:  return "Burst";
     case MENU_ITEM_PREREV: return "PreRev";
+    case MENU_ITEM_ABOUT:  return "About";
     case MENU_ITEM_BACK:   return "Back";
     case MENU_ITEM_RPM:
     default:               return "RPM";
@@ -899,6 +926,9 @@ void setup()
   testTransitionMenuStaysMenuWithoutClick();
   testTransitionEditToMenuOnClick();
   testTransitionEditStaysEditWithoutClick();
+  testTransitionMenuToAboutOnClickAbout();
+  testTransitionAboutToMenuOnClick();
+  testTransitionAboutStaysAboutWithoutClick();
   testCycleMenuItemForward();
   testCycleMenuItemBackward();
   testCycleMenuItemNoDirection();
