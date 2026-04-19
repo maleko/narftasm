@@ -33,7 +33,7 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 | Rev microswitch (NC) | A1 |
 | MP5 slap microswitch (NC) | A2 |
 | 3-position 2P3T slide switch | D2, D3 |
-| KY-040 rotary encoder | D13 (CLK), D11 (DT), D12 (SW) |
+| KY-040 rotary encoder | A3 (CLK), D11 (DT), D12 (SW) |
 | I2C SSD1306 OLED (5V tolerant) | A4 (SDA), A5 (SCL) |
 
 See [Phantasm-Wiring-Diagram.md](Phantasm-Wiring-Diagram.md) for full wiring

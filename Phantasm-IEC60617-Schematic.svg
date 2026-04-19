@@ -67,7 +67,7 @@
     <text x="664" y="234" class="pin">B−</text>
     <text x="664" y="304" class="pin">D2 / PIN_SELECT_1</text>
     <text x="664" y="354" class="pin">D3 / PIN_SELECT_2</text>
-    <text x="956" y="444" class="pin right">D13 / PIN_ENCODER_CLK</text>
+    <text x="956" y="444" class="pin right">A3 / PIN_ENCODER_CLK</text>
     <text x="664" y="594" class="pin">D6 / PIN_TRIGGER</text>
     <text x="664" y="724" class="pin">A1 / PIN_PRE_REV</text>
     <text x="664" y="854" class="pin">A2 / PIN_MP5_SLAP</text>
