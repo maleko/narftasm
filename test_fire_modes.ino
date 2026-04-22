@@ -42,8 +42,11 @@ enum MenuItem {
 #define MOTOR_RPM_MAX 8000
 #define ENCODER_RPM_STEP 250
 
+#define FIRE_MODE_DEBOUNCE_MS 40UL
+
 // ---- Functions under test (forward declarations) ----
 FireMode getFireMode( bool select1Low, bool select2Low );
+FireMode debounceFireMode( FireMode committed, FireMode rawReading, FireMode* pendingCandidate, uint32_t* pendingSinceMs, uint32_t nowMs, uint32_t debounceMs );
 unsigned long clampRPM( long rpm, unsigned long minRPM, unsigned long maxRPM );
 unsigned long calculateEncoderRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 const char* getFireModeLabel( FireMode mode );
@@ -158,8 +161,8 @@ void testGetFireModeSingleShot()
 
 void testGetFireModeBurst()
 {
-  // Slide switch position 2: SELECT_1 HIGH, SELECT_2 LOW = burst
-  assertEq( "Pos 2 Burst: sel1=HIGH sel2=LOW", FIRE_MODE_BURST, getFireMode( false, true ) );
+  // Slide switch position 2 (centre, ON-OFF-ON): both poles open = burst
+  assertEq( "Pos 2 Burst: sel1=HIGH sel2=HIGH", FIRE_MODE_BURST, getFireMode( false, false ) );
 }
 
 void testGetFireModeFullAuto()
@@ -170,9 +173,9 @@ void testGetFireModeFullAuto()
 
 void testGetFireModeFallback()
 {
-  // HIGH/HIGH should not occur with a properly wired 3-position slide switch,
-  // but the current sketch falls back to SINGLE if it does.
-  assertEq( "Fallback wiring state: sel1=HIGH sel2=HIGH -> SINGLE", FIRE_MODE_SINGLE, getFireMode( false, false ) );
+  // HIGH/LOW cannot occur with ON-OFF-ON wiring (only one outer terminal
+  // of Pole B is grounded); defaults defensively to SINGLE.
+  assertEq( "Defensive: sel1=HIGH sel2=LOW -> SINGLE", FIRE_MODE_SINGLE, getFireMode( false, true ) );
 }
 
 void testBurstCountIsThree()
@@ -204,6 +207,95 @@ void testFireModeEnumValues()
   assertEq( "FIRE_MODE_SINGLE is 0", 0, FIRE_MODE_SINGLE );
   assertEq( "FIRE_MODE_BURST is 1", 1, FIRE_MODE_BURST );
   assertEq( "FIRE_MODE_FULL_AUTO is 2", 2, FIRE_MODE_FULL_AUTO );
+}
+
+// ---- Fire Mode Debounce Tests ----
+
+void testDebounceFireModeNoChangeWhenStable()
+{
+  FireMode pending = FIRE_MODE_BURST;
+  uint32_t pendingSince = 1000;
+  FireMode committed = debounceFireMode( FIRE_MODE_BURST, FIRE_MODE_BURST,
+    &pending, &pendingSince, 2000, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "debounce: stable reading returns committed", FIRE_MODE_BURST, committed );
+  assertEq( "debounce: stable reading resets pending to committed", FIRE_MODE_BURST, pending );
+}
+
+void testDebounceFireModeTransientIgnoredBelowWindow()
+{
+  // Switch committed to FULL_AUTO. Transient SINGLE appears briefly while slider
+  // transits between positions. Must not commit because window not elapsed.
+  FireMode pending = FIRE_MODE_FULL_AUTO;
+  uint32_t pendingSince = 0;
+  FireMode committed = debounceFireMode( FIRE_MODE_FULL_AUTO, FIRE_MODE_SINGLE,
+    &pending, &pendingSince, 10, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "debounce: transient at t=10ms keeps committed", FIRE_MODE_FULL_AUTO, committed );
+  assertEq( "debounce: transient starts new candidate", FIRE_MODE_SINGLE, pending );
+  assertEqUL( "debounce: pending timestamp captured", 10UL, pendingSince );
+}
+
+void testDebounceFireModeCommitsAfterStableWindow()
+{
+  // Candidate has been present since t=0; at t=debounce window, commit.
+  FireMode pending = FIRE_MODE_BURST;
+  uint32_t pendingSince = 0;
+  FireMode committed = debounceFireMode( FIRE_MODE_FULL_AUTO, FIRE_MODE_BURST,
+    &pending, &pendingSince, FIRE_MODE_DEBOUNCE_MS, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "debounce: commits at window boundary", FIRE_MODE_BURST, committed );
+}
+
+void testDebounceFireModeResetsOnCandidateFlip()
+{
+  // While candidate SINGLE is pending, reading flips to BURST — timer restarts.
+  FireMode pending = FIRE_MODE_SINGLE;
+  uint32_t pendingSince = 5;
+  FireMode committed = debounceFireMode( FIRE_MODE_FULL_AUTO, FIRE_MODE_BURST,
+    &pending, &pendingSince, 20, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "debounce: flip keeps committed", FIRE_MODE_FULL_AUTO, committed );
+  assertEq( "debounce: flip updates pending candidate", FIRE_MODE_BURST, pending );
+  assertEqUL( "debounce: flip restarts timer", 20UL, pendingSince );
+}
+
+void testDebounceFireModeAutoToBurstWithTransitSingle()
+{
+  // Simulates the reported bug: committed=FULL_AUTO, slider transits toward
+  // BURST and the HIGH/HIGH fallback yields a transient SINGLE reading for
+  // a few ms before BURST settles. Committed must never become SINGLE.
+  FireMode pending = FIRE_MODE_FULL_AUTO;
+  uint32_t pendingSince = 0;
+  FireMode committed = FIRE_MODE_FULL_AUTO;
+
+  // t=0: last stable read still FULL_AUTO
+  committed = debounceFireMode( committed, FIRE_MODE_FULL_AUTO, &pending, &pendingSince, 0, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "scenario t=0 AUTO", FIRE_MODE_FULL_AUTO, committed );
+
+  // t=5: transit begins, reading is transient SINGLE
+  committed = debounceFireMode( committed, FIRE_MODE_SINGLE, &pending, &pendingSince, 5, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "scenario t=5 transit SINGLE ignored", FIRE_MODE_FULL_AUTO, committed );
+
+  // t=15: transit still in progress
+  committed = debounceFireMode( committed, FIRE_MODE_SINGLE, &pending, &pendingSince, 15, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "scenario t=15 transit SINGLE still ignored", FIRE_MODE_FULL_AUTO, committed );
+
+  // t=25: slider lands on BURST before window elapsed — new candidate, timer restarts
+  committed = debounceFireMode( committed, FIRE_MODE_BURST, &pending, &pendingSince, 25, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "scenario t=25 BURST pending, committed still AUTO", FIRE_MODE_FULL_AUTO, committed );
+
+  // t=65: BURST has been stable for 40ms — commit.
+  committed = debounceFireMode( committed, FIRE_MODE_BURST, &pending, &pendingSince, 65, FIRE_MODE_DEBOUNCE_MS );
+  assertEq( "scenario t=65 BURST commits, never saw SINGLE", FIRE_MODE_BURST, committed );
+}
+
+void testDebounceFireModeHandlesMillisRollover()
+{
+  // Candidate first seen just before rollover; now just after — elapsed should
+  // be 21ms via unsigned subtraction, not billions.
+  FireMode pending = FIRE_MODE_BURST;
+  uint32_t pendingSince = 0xFFFFFFF0UL;
+  FireMode committed = debounceFireMode( FIRE_MODE_SINGLE, FIRE_MODE_BURST,
+    &pending, &pendingSince, 5UL, FIRE_MODE_DEBOUNCE_MS );
+  // 21ms elapsed, window 40ms -> not yet committed
+  assertEq( "debounce: rollover elapsed 21ms < 40ms keeps committed", FIRE_MODE_SINGLE, committed );
 }
 
 // ---- RPM Clamping Tests ----
@@ -677,11 +769,32 @@ void testGetCenterModeLabel()
 
 FireMode getFireMode( bool select1Low, bool select2Low )
 {
-  if( !select1Low && select2Low )
-    return FIRE_MODE_BURST;
   if( select1Low && select2Low )
     return FIRE_MODE_FULL_AUTO;
+  if( !select1Low && !select2Low )
+    return FIRE_MODE_BURST;
   return FIRE_MODE_SINGLE;
+}
+
+FireMode debounceFireMode( FireMode committed, FireMode rawReading,
+  FireMode* pendingCandidate, uint32_t* pendingSinceMs,
+  uint32_t nowMs, uint32_t debounceMs )
+{
+  if( rawReading == committed )
+  {
+    *pendingCandidate = committed;
+    *pendingSinceMs = nowMs;
+    return committed;
+  }
+  if( rawReading != *pendingCandidate )
+  {
+    *pendingCandidate = rawReading;
+    *pendingSinceMs = nowMs;
+    return committed;
+  }
+  if( ( nowMs - *pendingSinceMs ) >= debounceMs )
+    return rawReading;
+  return committed;
 }
 
 unsigned long clampRPM( long rpm, unsigned long minRPM, unsigned long maxRPM )
@@ -850,6 +963,14 @@ void setup()
   testGetFireModeFallback();
   testBurstCountIsThree();
   testSingleShotEdgeDetection();
+
+  // Fire mode debounce tests
+  testDebounceFireModeNoChangeWhenStable();
+  testDebounceFireModeTransientIgnoredBelowWindow();
+  testDebounceFireModeCommitsAfterStableWindow();
+  testDebounceFireModeResetsOnCandidateFlip();
+  testDebounceFireModeAutoToBurstWithTransitSingle();
+  testDebounceFireModeHandlesMillisRollover();
 
   // RPM clamping tests
   testClampRPMWithinRange();

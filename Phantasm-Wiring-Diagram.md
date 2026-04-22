@@ -15,11 +15,20 @@
 
 ## Select Fire Switch Type
 
-You need a **2-pole 3-position (2P3T) slide switch**. This has 2 independent
-poles (A and B), each with a common terminal and 3 selectable positions.
-Two pins (D2 and D3) are used with `INPUT_PULLUP` to encode 3 fire modes
-in binary. The unreachable `HIGH/HIGH` state falls back to **Single** in the
-current sketch. Safety is handled separately by the MP5 slap switch.
+You need a 6-pin **2-pole 3-position slide switch** in the common
+**ON‑OFF‑ON** (centre-off) layout — two rows of three pins, with the middle
+pin of each row as the pole common. In this style the centre slider position
+makes no contact on either pole. Two pins (D2 and D3) with `INPUT_PULLUP`
+then encode 3 fire modes:
+
+* **Pos 1 (left)**   → D2 LOW, D3 HIGH → **Single**
+* **Pos 2 (centre)** → D2 HIGH, D3 HIGH → **Burst** (both poles open)
+* **Pos 3 (right)**  → D2 LOW, D3 LOW → **Full Auto**
+
+The `HIGH/LOW` combination is unreachable with this wiring; the sketch
+defaults defensively to **Single** if it ever occurs. Safety is handled
+separately by the MP5 slap switch. The fire-mode read is debounced for 40 ms
+so quick slides across the centre position do not flicker through Burst.
 
 ## Wiring Diagram (Mermaid)
 
@@ -52,14 +61,13 @@ graph TD
         GND["GND pad"]
     end
 
-    subgraph SW["3-Position 2P3T Slide Switch"]
+    subgraph SW["2P3T Slide Switch (ON-OFF-ON)"]
         direction TB
         P1C["Pole A — Common"]
-        P1_1["Pole A — Pos 1 (Single)"]
-        P1_3["Pole A — Pos 3 (Full Auto)"]
+        P1_1["Pole A — Pos 1 (left)"]
+        P1_3["Pole A — Pos 3 (right)"]
         P2C["Pole B — Common"]
-        P2_2["Pole B — Pos 2 (Burst)"]
-        P2_3["Pole B — Pos 3 (Full Auto)"]
+        P2_3["Pole B — Pos 3 (right)"]
     end
 
     subgraph TRIG["Trigger Microswitch (NO)"]
@@ -100,7 +108,6 @@ graph TD
     P2C -->|"wire"| D3
     P1_1 -->|"wire"| GND
     P1_3 -->|"wire"| GND
-    P2_2 -->|"wire"| GND
     P2_3 -->|"wire"| GND
 
     TC -->|"wire"| D6
@@ -169,26 +176,30 @@ graph TD
 
 | Position | Pole A (D2) | Pole B (D3) | Fire Mode |
 |---|---|---|---|
-| **1** | Closed → LOW | Open → HIGH | **Single Shot** |
-| **2** | Open → HIGH | Closed → LOW | **3-Round Burst** |
-| **3** | Closed → LOW | Closed → LOW | **Full Auto** |
-| **Fallback** | Open → HIGH | Open → HIGH | **Single Shot** (should not occur with correct wiring) |
+| **1 (left)** | Closed → LOW | Open → HIGH | **Single Shot** |
+| **2 (centre)** | Open → HIGH | Open → HIGH | **3-Round Burst** |
+| **3 (right)** | Closed → LOW | Closed → LOW | **Full Auto** |
+| **Defensive** | Open → HIGH | Closed → LOW | **Single Shot** (unreachable with this wiring) |
 
 ## Slide Switch Wiring Detail
 
-The 2P3T slide switch has 2 poles (A and B), each with a common pin and
-3 position pins. Wire the positions to GND as follows:
+The switch is an **ON‑OFF‑ON** 2P3T slide switch (6 pins total, two rows of
+three). The middle pin of each row is that pole's common. The centre slider
+position makes no contact on either pole, so only the outer throw pins are
+wired. Solder as follows:
 
-| Terminal | Connects To |
-|---|---|
-| Pole A — Common | D2 |
-| Pole A — Position 1 | GND (pulls D2 LOW) |
-| Pole A — Position 2 | Not connected (D2 stays HIGH) |
-| Pole A — Position 3 | GND (pulls D2 LOW) |
-| Pole B — Common | D3 |
-| Pole B — Position 1 | Not connected (D3 stays HIGH) |
-| Pole B — Position 2 | GND (pulls D3 LOW) |
-| Pole B — Position 3 | GND (pulls D3 LOW) |
+| Physical pin | Role | Connects to |
+|---|---|---|
+| Row A — middle | Pole A Common | **D2** |
+| Row A — left   | Pole A throw 1 | **GND** |
+| Row A — right  | Pole A throw 3 | **GND** |
+| Row B — middle | Pole B Common | **D3** |
+| Row B — left   | Pole B throw 1 | **Not connected** |
+| Row B — right  | Pole B throw 3 | **GND** |
+
+With this wiring, Pos 1 grounds only D2, Pos 3 grounds both D2 and D3, and
+Pos 2 (centre-off) leaves both floating HIGH — which the sketch interprets
+as **Burst**.
 
 ## Notes
 

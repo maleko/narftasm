@@ -118,6 +118,14 @@ int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
 #define BUTTON_DEBOUNCE_MS 200
 
+// Fire-mode selector debounce: transient HIGH/HIGH during 2P3T slider transit
+// otherwise dispatches to SINGLE for a few ms; require the raw reading to be
+// stable for this window before committing.
+#define FIRE_MODE_DEBOUNCE_MS 40UL
+FireMode committedFireMode = FIRE_MODE_SINGLE;
+FireMode pendingFireMode = FIRE_MODE_SINGLE;
+uint32_t pendingFireModeSinceMs = 0;
+
 
 // --- Startup Splash Bitmap ---
 const unsigned char splash[] PROGMEM = {
@@ -125,15 +133,43 @@ const unsigned char splash[] PROGMEM = {
 };
 
 // --- Pure Logic: Determine fire mode from 3-position slide switch state ---
-// Position 1: LOW/HIGH = Single, 2: HIGH/LOW = Burst, 3: LOW/LOW = Full Auto
-// HIGH/HIGH cannot occur with a properly wired slide switch; defaults to SINGLE.
+// ON-OFF-ON 2P3T wiring (centre position has no contact on either pole):
+//   Pos 1 (left):   D2 LOW,  D3 HIGH -> Single
+//   Pos 2 (centre): D2 HIGH, D3 HIGH -> Burst
+//   Pos 3 (right):  D2 LOW,  D3 LOW  -> Full Auto
+// HIGH/LOW is unreachable with this wiring; defaults defensively to SINGLE.
 FireMode getFireMode( bool select1Low, bool select2Low )
 {
-  if( !select1Low && select2Low )
-    return FIRE_MODE_BURST;
   if( select1Low && select2Low )
     return FIRE_MODE_FULL_AUTO;
+  if( !select1Low && !select2Low )
+    return FIRE_MODE_BURST;
   return FIRE_MODE_SINGLE;
+}
+
+// --- Pure Logic: Debounce the fire-mode reading ---
+// Holds committed mode until a different raw reading has been stable for
+// debounceMs. Also resets the candidate whenever the raw reading flips, so
+// bouncy transit through multiple positions never promotes a transient.
+FireMode debounceFireMode( FireMode committed, FireMode rawReading,
+  FireMode* pendingCandidate, uint32_t* pendingSinceMs,
+  uint32_t nowMs, uint32_t debounceMs )
+{
+  if( rawReading == committed )
+  {
+    *pendingCandidate = committed;
+    *pendingSinceMs = nowMs;
+    return committed;
+  }
+  if( rawReading != *pendingCandidate )
+  {
+    *pendingCandidate = rawReading;
+    *pendingSinceMs = nowMs;
+    return committed;
+  }
+  if( ( nowMs - *pendingSinceMs ) >= debounceMs )
+    return rawReading;
+  return committed;
 }
 
 // --- Pure Logic: Clamp RPM within valid bounds ---
@@ -353,14 +389,24 @@ void fullAuto()
   }
 }
 
-// --- Fire Mode Dispatcher ---
-void selectFire()
+// --- Sample pins and run one debounce step, returning the committed mode ---
+FireMode readAndDebounceFireMode()
 {
-  FireMode mode = getFireMode(
+  FireMode raw = getFireMode(
     digitalRead( PIN_SELECT_1 ) == LOW,
     digitalRead( PIN_SELECT_2 ) == LOW
   );
+  committedFireMode = debounceFireMode(
+    committedFireMode, raw,
+    &pendingFireMode, &pendingFireModeSinceMs,
+    millis(), FIRE_MODE_DEBOUNCE_MS
+  );
+  return committedFireMode;
+}
 
+// --- Fire Mode Dispatcher ---
+void selectFire( FireMode mode )
+{
   switch( mode )
   {
     case FIRE_MODE_BURST:
@@ -573,6 +619,9 @@ void updateDisplay( FireMode mode, unsigned long rpm, int burst, unsigned long p
 // --- Setup ---
 void setup()
 {
+  Serial.begin( 115200 );
+  Serial.println( F( "--- Phantasm boot ---" ) );
+
   pinMode( PIN_TRIGGER, INPUT_PULLUP );
   pinMode( PIN_PRE_REV, INPUT_PULLUP );
   pinMode( PIN_MP5_SLAP, INPUT_PULLUP );
@@ -702,13 +751,41 @@ void loop()
     displayState = DISPLAY_VIEW;
   }
 
-  FireMode mode = getFireMode(
-    digitalRead( PIN_SELECT_1 ) == LOW,
-    digitalRead( PIN_SELECT_2 ) == LOW
-  );
+  FireMode mode = readAndDebounceFireMode();
 
   bool preRevActive = isPreRevActive( digitalRead( PIN_PRE_REV ) == HIGH );
   bool mp5SlapSafe = isMp5SlapSafe( digitalRead( PIN_MP5_SLAP ) == HIGH );
+
+  // Edge-detecting serial logging for switch state changes (debug aid)
+  static FireMode lastLoggedMode = (FireMode)-1;
+  static int lastLoggedPreRev = -1;
+  static int lastLoggedMp5Safe = -1;
+  static int lastLoggedTrigger = -1;
+
+  if( mode != lastLoggedMode )
+  {
+    Serial.print( F( "Fire mode: " ) );
+    Serial.println( getFireModeLabel( mode ) );
+    lastLoggedMode = mode;
+  }
+  if( (int)preRevActive != lastLoggedPreRev )
+  {
+    Serial.print( F( "Pre-rev switch: " ) );
+    Serial.println( preRevActive ? F( "ON" ) : F( "OFF" ) );
+    lastLoggedPreRev = (int)preRevActive;
+  }
+  if( (int)mp5SlapSafe != lastLoggedMp5Safe )
+  {
+    Serial.print( F( "MP5 slap: " ) );
+    Serial.println( mp5SlapSafe ? F( "SAFE (bolt locked)" ) : F( "UNSAFE (bolt open)" ) );
+    lastLoggedMp5Safe = (int)mp5SlapSafe;
+  }
+  int triggerNow = digitalRead( PIN_TRIGGER );
+  if( triggerNow != lastLoggedTrigger )
+  {
+    Serial.println( triggerNow == LOW ? F( "Trigger: PRESSED" ) : F( "Trigger: RELEASED" ) );
+    lastLoggedTrigger = triggerNow;
+  }
 
   // Any firing/prerev activity snaps the UI back to the default VIEW so the
   // operator can see live stats rather than a stale edit screen.
@@ -755,7 +832,7 @@ void loop()
       return;
     }
 
-    selectFire();
+    selectFire( readAndDebounceFireMode() );
     NBCProcessFlywheelSpeed();
   }
 
