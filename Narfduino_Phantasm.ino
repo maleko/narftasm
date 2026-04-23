@@ -8,7 +8,7 @@
 
 // --- Pin Definitions ---
 #define PIN_TRIGGER 6
-#define PIN_PRE_REV A1
+#define PIN_PRE_REV 13
 #define PIN_SELECT_1 2
 #define PIN_SELECT_2 3
 #define PIN_ENCODER_CLK A3
@@ -236,11 +236,16 @@ unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction
 }
 
 // --- Pure Logic: Determine pre-rev state from NC switch reading ---
-// NC switch wiring: closed at rest pulls pin LOW, opened pulls pin HIGH
-// via INPUT_PULLUP. Pre-rev is active when the switch is open (pin HIGH).
+// The rev microswitch sits behind the trigger with its plunger held
+// depressed by the trigger face at rest, so the C+NC pair is open and
+// INPUT_PULLUP leaves the pin HIGH. Pulling the trigger slightly releases
+// the plunger, the NC contacts close, and the pin is pulled LOW via GND;
+// pre-rev therefore engages on pin LOW to idle the flywheels. Further
+// trigger travel actuates the main trigger (PIN_TRIGGER) for full RPM
+// and firing.
 bool isPreRevActive( bool pinHigh )
 {
-  return pinHigh;
+  return !pinHigh;
 }
 
 // --- Pure Logic: Determine MP5 slap safety state from NC switch reading ---
