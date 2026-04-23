@@ -29,10 +29,6 @@
 #define MOTOR_RPM_MAX 8000
 #define MOTOR_RPM_DEFAULT 5000
 #define ENCODER_RPM_STEP 250
-#define PRE_REV_RPM_DEFAULT 3000
-#define PRE_REV_RPM_MIN 2000
-#define PRE_REV_RPM_MAX 5000
-#define ENCODER_PRE_REV_STEP 250
 
 // --- Fire Mode Enum ---
 enum FireMode {
@@ -53,7 +49,6 @@ enum DisplayState {
 enum MenuItem {
   MENU_ITEM_RPM,
   MENU_ITEM_BURST,
-  MENU_ITEM_PREREV,
   MENU_ITEM_ABOUT,
   MENU_ITEM_BACK,
   MENU_ITEM_COUNT
@@ -101,8 +96,6 @@ int triggerState = LOW;
 int lastTriggerState = HIGH;
 unsigned long motorRPM = MOTOR_RPM_DEFAULT;
 int burstCount = BURST_COUNT_DEFAULT;
-unsigned long preRevRPM = PRE_REV_RPM_DEFAULT;
-bool idling = false;
 DisplayState displayState = DISPLAY_VIEW;
 DisplayState displayedState = DISPLAY_VIEW;
 MenuItem menuSelection = MENU_ITEM_RPM;
@@ -112,11 +105,17 @@ unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
 FireMode displayedMode = FIRE_MODE_SINGLE;
 bool displayedSafe = false;
-unsigned long displayedPreRevRPM = 0;
 float displayedVoltage = -1.0;
 int lastButtonState = HIGH;
 unsigned long lastButtonDebounceTime = 0;
 #define BUTTON_DEBOUNCE_MS 200
+
+// Deferred flywheel recalibration after RPM edits: calibration is blocking
+// and briefly spins the motors, so we hold it off until the user either
+// leaves the EDIT screen or pauses turning the encoder for this long.
+#define RPM_CALIBRATE_IDLE_MS 750UL
+bool rpmCalibratePending = false;
+uint32_t rpmLastChangeMs = 0;
 
 // Fire-mode selector debounce: transient HIGH/HIGH during 2P3T slider transit
 // otherwise dispatches to SINGLE for a few ms; require the raw reading to be
@@ -228,13 +227,6 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
   return clampBurstCount( newCount, minCount, maxCount );
 }
 
-// --- Pure Logic: Calculate new pre-rev RPM from encoder rotation ---
-unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM )
-{
-  long newRPM = (long)currentRPM + ( direction * (int)stepSize );
-  return clampRPM( newRPM, minRPM, maxRPM );
-}
-
 // --- Pure Logic: Determine pre-rev state from NC switch reading ---
 // The rev microswitch sits behind the trigger with its plunger held
 // depressed by the trigger face at rest, so the C+NC pair is open and
@@ -309,13 +301,22 @@ bool isMenuTimeoutExpired( uint32_t lastActivityMs, uint32_t nowMs, uint32_t tim
   return ( nowMs - lastActivityMs ) >= timeoutMs;
 }
 
+// --- Pure Logic: Decide whether a pending flywheel recalibration should fire now ---
+// Calibrate as soon as the user leaves the RPM edit screen (click-to-save), or
+// after they have paused turning the encoder for idleMs while still editing.
+bool shouldCalibrateNow( bool pending, bool inEditState, uint32_t lastChangeMs, uint32_t nowMs, uint32_t idleMs )
+{
+  if( !pending ) return false;
+  if( !inEditState ) return true;
+  return ( nowMs - lastChangeMs ) >= idleMs;
+}
+
 // --- Pure Logic: Get menu item label ---
 const char* getMenuItemLabel( MenuItem item )
 {
   switch( item )
   {
     case MENU_ITEM_BURST:  return "Burst";
-    case MENU_ITEM_PREREV: return "PreRev";
     case MENU_ITEM_ABOUT:  return "About";
     case MENU_ITEM_BACK:   return "Back";
     case MENU_ITEM_RPM:
@@ -477,8 +478,8 @@ void drawSplash()
   }
 }
 
-// --- VIEW layout: 4 corners (RPM / Burst / PreRev / Battery) + centred mode ---
-void drawView( FireMode mode, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool safe, float voltage, bool fullRedraw )
+// --- VIEW layout: 3 corners (RPM / Burst / Battery) + centred mode ---
+void drawView( FireMode mode, unsigned long rpm, int burst, bool safe, float voltage, bool fullRedraw )
 {
   char buf[8];
 
@@ -494,13 +495,6 @@ void drawView( FireMode mode, unsigned long rpm, int burst, unsigned long preRev
     snprintf( buf, sizeof( buf ), "B:%2d", burst );
     display.drawString( 12, 0, buf );
     displayedBurstCount = burst;
-  }
-
-  if( fullRedraw || hasRPMChanged( displayedPreRevRPM, preRevRPMVal ) )
-  {
-    snprintf( buf, sizeof( buf ), "P:%-4lu", preRevRPMVal );
-    display.drawString( 0, 7, buf );
-    displayedPreRevRPM = preRevRPMVal;
   }
 
   if( fullRedraw || hasVoltageChanged( displayedVoltage, voltage ) )
@@ -536,8 +530,8 @@ void drawMenu( MenuItem selected, bool fullRedraw )
   if( !fullRedraw && selected == displayedMenuSelection )
     return;
 
-  static const MenuItem order[5] = { MENU_ITEM_RPM, MENU_ITEM_BURST, MENU_ITEM_PREREV, MENU_ITEM_ABOUT, MENU_ITEM_BACK };
-  for( uint8_t i = 0; i < 5; i++ )
+  static const MenuItem order[4] = { MENU_ITEM_RPM, MENU_ITEM_BURST, MENU_ITEM_ABOUT, MENU_ITEM_BACK };
+  for( uint8_t i = 0; i < 4; i++ )
   {
     uint8_t row = 3 + i;
     display.clearLine( row );
@@ -562,8 +556,17 @@ void drawAbout( bool fullRedraw )
   display.drawString( 0, 7, "Phantasm design" );
 }
 
+// --- Blocking-calibration indicator: shown while CalibrateFlywheels() runs ---
+void drawCalibratingMessage()
+{
+  display.clear();
+  const char* label = "Calibrating...";
+  uint8_t col = centerTileCol( (uint8_t)strlen( label ), 1 );
+  display.drawString( col, 3, label );
+}
+
 // --- EDIT layout: header + large current value ---
-void drawEdit( MenuItem item, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool fullRedraw )
+void drawEdit( MenuItem item, unsigned long rpm, int burst, bool fullRedraw )
 {
   char buf[8];
 
@@ -580,9 +583,6 @@ void drawEdit( MenuItem item, unsigned long rpm, int burst, unsigned long preRev
     case MENU_ITEM_BURST:
       snprintf( buf, sizeof( buf ), "%d", burst );
       break;
-    case MENU_ITEM_PREREV:
-      snprintf( buf, sizeof( buf ), "%lu", preRevRPMVal );
-      break;
     case MENU_ITEM_RPM:
     default:
       snprintf( buf, sizeof( buf ), "%lu", rpm );
@@ -595,7 +595,7 @@ void drawEdit( MenuItem item, unsigned long rpm, int burst, unsigned long preRev
 }
 
 // --- Display dispatcher (clears on state change; dirty-checks within state) ---
-void updateDisplay( FireMode mode, unsigned long rpm, int burst, unsigned long preRevRPMVal, bool safe, float voltage )
+void updateDisplay( FireMode mode, unsigned long rpm, int burst, bool safe, float voltage )
 {
   bool stateChanged = ( displayState != displayedState );
   if( stateChanged && displayState == DISPLAY_VIEW )
@@ -607,14 +607,14 @@ void updateDisplay( FireMode mode, unsigned long rpm, int burst, unsigned long p
       drawMenu( menuSelection, stateChanged );
       break;
     case DISPLAY_EDIT:
-      drawEdit( menuSelection, rpm, burst, preRevRPMVal, stateChanged );
+      drawEdit( menuSelection, rpm, burst, stateChanged );
       break;
     case DISPLAY_ABOUT:
       drawAbout( stateChanged );
       break;
     case DISPLAY_VIEW:
     default:
-      drawView( mode, rpm, burst, preRevRPMVal, safe, voltage, stateChanged );
+      drawView( mode, rpm, burst, safe, voltage, stateChanged );
       break;
   }
 
@@ -667,6 +667,7 @@ void setup()
   FlyshotBeep1( FLYSHOT_ESC_BOTH );
   delay( 1000 );
 
+  drawCalibratingMessage();
   CalibrateFlywheels();
 
   display.clear();
@@ -678,7 +679,6 @@ void setup()
   displayedSafe = false;
   displayedRPM = 0;
   displayedBurstCount = 0;
-  displayedPreRevRPM = 0;
   displayedVoltage = -1.0;
   lastActivityMs = millis();
 
@@ -699,23 +699,14 @@ void applyEditRotation( MenuItem item, int direction )
     if( hasRPMChanged( motorRPM, newRPM ) )
     {
       motorRPM = newRPM;
-      if( !idling )
-        FlyshotSetNewMotorSpeed( motorRPM );
+      FlyshotSetNewMotorSpeed( motorRPM );
+      rpmCalibratePending = true;
+      rpmLastChangeMs = millis();
     }
   }
   else if( item == MENU_ITEM_BURST )
   {
     burstCount = calculateEncoderBurst( burstCount, direction, ENCODER_BURST_STEP, BURST_COUNT_MIN, BURST_COUNT_MAX );
-  }
-  else if( item == MENU_ITEM_PREREV )
-  {
-    unsigned long newPreRevRPM = calculateEncoderPreRevRPM( preRevRPM, direction, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX );
-    if( hasRPMChanged( preRevRPM, newPreRevRPM ) )
-    {
-      preRevRPM = newPreRevRPM;
-      if( idling )
-        FlyshotSetNewMotorSpeed( preRevRPM );
-    }
   }
 }
 
@@ -799,14 +790,26 @@ void loop()
     displayState = DISPLAY_VIEW;
   }
 
-  updateDisplay( mode, motorRPM, burstCount, preRevRPM, !mp5SlapSafe, currentVoltage );
+  updateDisplay( mode, motorRPM, burstCount, !mp5SlapSafe, currentVoltage );
 
   if( !mp5SlapSafe )
   {
     NBCProcessFlywheelSpeed();
     FlyshotStopMotors();
-    idling = false;
     return;
+  }
+
+  // Run deferred recalibration now that we know we're safe and the trigger
+  // is released; skips while the user is still spinning the RPM encoder.
+  if( digitalRead( PIN_TRIGGER ) == HIGH
+      && shouldCalibrateNow( rpmCalibratePending, displayState == DISPLAY_EDIT,
+                             rpmLastChangeMs, millis(), RPM_CALIBRATE_IDLE_MS ) )
+  {
+    drawCalibratingMessage();
+    CalibrateFlywheels();
+    rpmCalibratePending = false;
+    // Force a full redraw so the EDIT/VIEW screen repaints over the message
+    displayedState = (DisplayState)0xFF;
   }
 
   while( digitalRead( PIN_TRIGGER ) == LOW )
@@ -817,15 +820,7 @@ void loop()
     {
       NBCProcessFlywheelSpeed();
       FlyshotStopMotors();
-      idling = false;
       return;
-    }
-
-    // Restore full target RPM when transitioning from idle to firing
-    if( preRevActive && idling )
-    {
-      idling = false;
-      FlyshotSetNewMotorSpeed( motorRPM );
     }
 
     if( !FlyshotStartMotorsAndWait( MAX_WAIT_TIME ) )
@@ -833,7 +828,6 @@ void loop()
       FlyshotStopMotorsAndWait( MAX_WAIT_TIME );
       FlyshotBeep2( FLYSHOT_ESC_BOTH );
       NBCWait( 5000 );
-      idling = false;
       return;
     }
 
@@ -848,17 +842,10 @@ void loop()
 
   if( preRevActive )
   {
-    // Drop governor to idle RPM, keep flywheels spinning
-    if( !idling )
-    {
-      FlyshotSetNewMotorSpeed( preRevRPM );
-      idling = true;
-    }
     FlyshotStartMotors();
   }
   else
   {
     FlyshotStopMotors();
-    idling = false;
   }
 }

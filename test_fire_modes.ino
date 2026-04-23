@@ -21,18 +21,12 @@ enum DisplayState {
 enum MenuItem {
   MENU_ITEM_RPM,
   MENU_ITEM_BURST,
-  MENU_ITEM_PREREV,
   MENU_ITEM_ABOUT,
   MENU_ITEM_BACK,
   MENU_ITEM_COUNT
 };
 
 #define DISPLAY_MENU_TIMEOUT_MS 10000UL
-
-#define PRE_REV_RPM_DEFAULT 3000
-#define PRE_REV_RPM_MIN 2000
-#define PRE_REV_RPM_MAX 5000
-#define ENCODER_PRE_REV_STEP 250
 
 #define BURST_COUNT_DEFAULT 3
 #define BURST_COUNT_MIN 2
@@ -43,6 +37,7 @@ enum MenuItem {
 #define ENCODER_RPM_STEP 250
 
 #define FIRE_MODE_DEBOUNCE_MS 40UL
+#define RPM_CALIBRATE_IDLE_MS 750UL
 
 // ---- Functions under test (forward declarations) ----
 FireMode getFireMode( bool select1Low, bool select2Low );
@@ -56,7 +51,6 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
 bool isPreRevActive( bool pinHigh );
 bool isMp5SlapSafe( bool pinHigh );
 const char* getDisplayModeLabel( FireMode mode, bool safe );
-unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM );
 bool hasVoltageChanged( float oldVoltage, float newVoltage );
 DisplayState transitionDisplayState( DisplayState current, MenuItem selected, bool clicked );
 MenuItem cycleMenuItem( MenuItem current, int direction );
@@ -65,6 +59,7 @@ const char* getMenuItemLabel( MenuItem item );
 uint8_t centerTileCol( uint8_t labelLen, uint8_t scale );
 void formatVoltageShort( float voltage, char* buf, size_t bufSize );
 const char* getCenterModeLabel( FireMode mode, bool safe );
+bool shouldCalibrateNow( bool pending, bool inEditState, uint32_t lastChangeMs, uint32_t nowMs, uint32_t idleMs );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -500,47 +495,6 @@ void testIsPreRevInactiveWhenSwitchOpen()
   assertBool( "isPreRevActive: pin HIGH (switch open) returns false", false, isPreRevActive( true ) );
 }
 
-void testPreRevRPMDefaultConstant()
-{
-  assertEqUL( "PRE_REV_RPM_DEFAULT is 3000", 3000, PRE_REV_RPM_DEFAULT );
-}
-
-void testPreRevRPMMinConstant()
-{
-  assertEqUL( "PRE_REV_RPM_MIN is 2000", 2000, PRE_REV_RPM_MIN );
-}
-
-void testPreRevRPMMaxConstant()
-{
-  assertEqUL( "PRE_REV_RPM_MAX is 5000", 5000, PRE_REV_RPM_MAX );
-}
-
-// ---- Pre-Rev RPM Calculation Tests ----
-
-void testCalculateEncoderPreRevRPMClockwise()
-{
-  assertEqUL( "calculateEncoderPreRevRPM: CW increases by step", 3250,
-    calculateEncoderPreRevRPM( 3000, 1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
-}
-
-void testCalculateEncoderPreRevRPMAnticlockwise()
-{
-  assertEqUL( "calculateEncoderPreRevRPM: CCW decreases by step", 2750,
-    calculateEncoderPreRevRPM( 3000, -1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
-}
-
-void testCalculateEncoderPreRevRPMClampsAtMax()
-{
-  assertEqUL( "calculateEncoderPreRevRPM: CW at max stays at max", PRE_REV_RPM_MAX,
-    calculateEncoderPreRevRPM( PRE_REV_RPM_MAX, 1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
-}
-
-void testCalculateEncoderPreRevRPMClampsAtMin()
-{
-  assertEqUL( "calculateEncoderPreRevRPM: CCW at min stays at min", PRE_REV_RPM_MIN,
-    calculateEncoderPreRevRPM( PRE_REV_RPM_MIN, -1, ENCODER_PRE_REV_STEP, PRE_REV_RPM_MIN, PRE_REV_RPM_MAX ) );
-}
-
 // ---- Burst Count Default ----
 
 void testBurstCountDefault()
@@ -608,10 +562,9 @@ void testMenuItemEnumValues()
 {
   assertEq( "MENU_ITEM_RPM is 0", 0, MENU_ITEM_RPM );
   assertEq( "MENU_ITEM_BURST is 1", 1, MENU_ITEM_BURST );
-  assertEq( "MENU_ITEM_PREREV is 2", 2, MENU_ITEM_PREREV );
-  assertEq( "MENU_ITEM_ABOUT is 3", 3, MENU_ITEM_ABOUT );
-  assertEq( "MENU_ITEM_BACK is 4", 4, MENU_ITEM_BACK );
-  assertEq( "MENU_ITEM_COUNT is 5", 5, MENU_ITEM_COUNT );
+  assertEq( "MENU_ITEM_ABOUT is 2", 2, MENU_ITEM_ABOUT );
+  assertEq( "MENU_ITEM_BACK is 3", 3, MENU_ITEM_BACK );
+  assertEq( "MENU_ITEM_COUNT is 4", 4, MENU_ITEM_COUNT );
 }
 
 void testTransitionViewToMenuOnClick()
@@ -632,11 +585,6 @@ void testTransitionMenuToEditOnClickRPM()
 void testTransitionMenuToEditOnClickBurst()
 {
   assertEq( "MENU + click on Burst -> EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_BURST, true ) );
-}
-
-void testTransitionMenuToEditOnClickPreRev()
-{
-  assertEq( "MENU + click on PreRev -> EDIT", DISPLAY_EDIT, transitionDisplayState( DISPLAY_MENU, MENU_ITEM_PREREV, true ) );
 }
 
 void testTransitionMenuToViewOnClickBack()
@@ -662,8 +610,7 @@ void testTransitionEditStaysEditWithoutClick()
 void testCycleMenuItemForward()
 {
   assertEq( "cycleMenuItem RPM +1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_RPM, 1 ) );
-  assertEq( "cycleMenuItem BURST +1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_BURST, 1 ) );
-  assertEq( "cycleMenuItem PREREV +1 -> ABOUT", MENU_ITEM_ABOUT, cycleMenuItem( MENU_ITEM_PREREV, 1 ) );
+  assertEq( "cycleMenuItem BURST +1 -> ABOUT", MENU_ITEM_ABOUT, cycleMenuItem( MENU_ITEM_BURST, 1 ) );
   assertEq( "cycleMenuItem ABOUT +1 -> BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_ABOUT, 1 ) );
   assertEq( "cycleMenuItem BACK +1 wraps to RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BACK, 1 ) );
 }
@@ -672,8 +619,7 @@ void testCycleMenuItemBackward()
 {
   assertEq( "cycleMenuItem RPM -1 wraps to BACK", MENU_ITEM_BACK, cycleMenuItem( MENU_ITEM_RPM, -1 ) );
   assertEq( "cycleMenuItem BURST -1 -> RPM", MENU_ITEM_RPM, cycleMenuItem( MENU_ITEM_BURST, -1 ) );
-  assertEq( "cycleMenuItem PREREV -1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_PREREV, -1 ) );
-  assertEq( "cycleMenuItem ABOUT -1 -> PREREV", MENU_ITEM_PREREV, cycleMenuItem( MENU_ITEM_ABOUT, -1 ) );
+  assertEq( "cycleMenuItem ABOUT -1 -> BURST", MENU_ITEM_BURST, cycleMenuItem( MENU_ITEM_ABOUT, -1 ) );
   assertEq( "cycleMenuItem BACK -1 -> ABOUT", MENU_ITEM_ABOUT, cycleMenuItem( MENU_ITEM_BACK, -1 ) );
 }
 
@@ -709,7 +655,6 @@ void testGetMenuItemLabel()
 {
   assertStrEq( "menu label RPM", "RPM", getMenuItemLabel( MENU_ITEM_RPM ) );
   assertStrEq( "menu label Burst", "Burst", getMenuItemLabel( MENU_ITEM_BURST ) );
-  assertStrEq( "menu label PreRev", "PreRev", getMenuItemLabel( MENU_ITEM_PREREV ) );
   assertStrEq( "menu label About", "About", getMenuItemLabel( MENU_ITEM_ABOUT ) );
   assertStrEq( "menu label Back", "Back", getMenuItemLabel( MENU_ITEM_BACK ) );
 }
@@ -765,6 +710,60 @@ void testGetCenterModeLabel()
   assertStrEq( "center label safe override SINGLE", "SAFE", getCenterModeLabel( FIRE_MODE_SINGLE, true ) );
   assertStrEq( "center label safe override BURST", "SAFE", getCenterModeLabel( FIRE_MODE_BURST, true ) );
   assertStrEq( "center label safe override AUTO", "SAFE", getCenterModeLabel( FIRE_MODE_FULL_AUTO, true ) );
+}
+
+// ---- Deferred Flywheel Recalibration Tests ----
+
+void testShouldCalibrateNowNotPending()
+{
+  // No pending calibration -> never fires, regardless of edit state or elapsed time.
+  assertBool( "shouldCalibrateNow: pending=false in EDIT never fires",
+    false, shouldCalibrateNow( false, true, 0UL, 10000UL, RPM_CALIBRATE_IDLE_MS ) );
+  assertBool( "shouldCalibrateNow: pending=false out of EDIT never fires",
+    false, shouldCalibrateNow( false, false, 0UL, 10000UL, RPM_CALIBRATE_IDLE_MS ) );
+}
+
+void testShouldCalibrateNowLeftEditImmediate()
+{
+  // Click-to-save path: user left EDIT, calibrate immediately even with zero elapsed.
+  assertBool( "shouldCalibrateNow: left EDIT fires immediately (t=lastChange)",
+    true, shouldCalibrateNow( true, false, 1000UL, 1000UL, RPM_CALIBRATE_IDLE_MS ) );
+  assertBool( "shouldCalibrateNow: left EDIT fires even mid-window",
+    true, shouldCalibrateNow( true, false, 1000UL, 1100UL, RPM_CALIBRATE_IDLE_MS ) );
+}
+
+void testShouldCalibrateNowStillEditingBeforeIdle()
+{
+  // Still in EDIT and encoder paused for less than the idle window -> defer.
+  assertBool( "shouldCalibrateNow: still editing, 100ms pause < 750ms idle",
+    false, shouldCalibrateNow( true, true, 1000UL, 1100UL, RPM_CALIBRATE_IDLE_MS ) );
+  assertBool( "shouldCalibrateNow: still editing, 749ms pause < 750ms idle",
+    false, shouldCalibrateNow( true, true, 1000UL, 1749UL, RPM_CALIBRATE_IDLE_MS ) );
+}
+
+void testShouldCalibrateNowStillEditingAtIdleBoundary()
+{
+  // Idle window met exactly at the boundary -> fire.
+  assertBool( "shouldCalibrateNow: still editing, 750ms pause == idle boundary",
+    true, shouldCalibrateNow( true, true, 1000UL, 1750UL, RPM_CALIBRATE_IDLE_MS ) );
+}
+
+void testShouldCalibrateNowStillEditingPastIdle()
+{
+  // Well past the idle window -> fire.
+  assertBool( "shouldCalibrateNow: still editing, 2000ms pause > idle",
+    true, shouldCalibrateNow( true, true, 1000UL, 3000UL, RPM_CALIBRATE_IDLE_MS ) );
+}
+
+void testShouldCalibrateNowHandlesMillisRollover()
+{
+  // lastChange just before millis() rollover, now just after: unsigned subtraction
+  // yields 21 ms elapsed, not ~4 billion. 21 < 750 -> still defer.
+  assertBool( "shouldCalibrateNow: rollover 21ms < 750ms idle keeps deferred",
+    false, shouldCalibrateNow( true, true, 0xFFFFFFF0UL, 5UL, RPM_CALIBRATE_IDLE_MS ) );
+  // Same rollover scenario but the idle window is 10 ms -> fire.
+  assertBool( "shouldCalibrateNow: rollover 21ms >= 10ms idle fires",
+    true, shouldCalibrateNow( true, true, 0xFFFFFFF0UL, 5UL, 10UL ) );
 }
 
 // ---- Implementations (must match Narfduino_Phantasm.ino) ----
@@ -848,12 +847,6 @@ int calculateEncoderBurst( int currentCount, int direction, int stepSize, int mi
   return clampBurstCount( newCount, minCount, maxCount );
 }
 
-unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction, unsigned int stepSize, unsigned long minRPM, unsigned long maxRPM )
-{
-  long newRPM = (long)currentRPM + ( direction * (int)stepSize );
-  return clampRPM( newRPM, minRPM, maxRPM );
-}
-
 bool isPreRevActive( bool pinHigh )
 {
   return !pinHigh;
@@ -908,12 +901,18 @@ const char* getMenuItemLabel( MenuItem item )
   switch( item )
   {
     case MENU_ITEM_BURST:  return "Burst";
-    case MENU_ITEM_PREREV: return "PreRev";
     case MENU_ITEM_ABOUT:  return "About";
     case MENU_ITEM_BACK:   return "Back";
     case MENU_ITEM_RPM:
     default:               return "RPM";
   }
+}
+
+bool shouldCalibrateNow( bool pending, bool inEditState, uint32_t lastChangeMs, uint32_t nowMs, uint32_t idleMs )
+{
+  if( !pending ) return false;
+  if( !inEditState ) return true;
+  return ( nowMs - lastChangeMs ) >= idleMs;
 }
 
 uint8_t centerTileCol( uint8_t labelLen, uint8_t scale )
@@ -1011,13 +1010,6 @@ void setup()
   // Pre-rev tests
   testIsPreRevActiveWhenSwitchClosed();
   testIsPreRevInactiveWhenSwitchOpen();
-  testPreRevRPMDefaultConstant();
-  testPreRevRPMMinConstant();
-  testPreRevRPMMaxConstant();
-  testCalculateEncoderPreRevRPMClockwise();
-  testCalculateEncoderPreRevRPMAnticlockwise();
-  testCalculateEncoderPreRevRPMClampsAtMax();
-  testCalculateEncoderPreRevRPMClampsAtMin();
 
   // Burst count tests
   testBurstCountDefault();
@@ -1044,7 +1036,6 @@ void setup()
   testTransitionViewStaysViewWithoutClick();
   testTransitionMenuToEditOnClickRPM();
   testTransitionMenuToEditOnClickBurst();
-  testTransitionMenuToEditOnClickPreRev();
   testTransitionMenuToViewOnClickBack();
   testTransitionMenuStaysMenuWithoutClick();
   testTransitionEditToMenuOnClick();
@@ -1064,6 +1055,14 @@ void setup()
   testCenterTileColScaled1x();
   testFormatVoltageShort();
   testGetCenterModeLabel();
+
+  // Deferred flywheel recalibration tests
+  testShouldCalibrateNowNotPending();
+  testShouldCalibrateNowLeftEditImmediate();
+  testShouldCalibrateNowStillEditingBeforeIdle();
+  testShouldCalibrateNowStillEditingAtIdleBoundary();
+  testShouldCalibrateNowStillEditingPastIdle();
+  testShouldCalibrateNowHandlesMillisRollover();
 
   Serial.println();
   Serial.println( "=== Results ===" );
