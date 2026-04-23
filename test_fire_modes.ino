@@ -485,17 +485,19 @@ void testIsMp5SlapUnsafeWhenBoltOpen()
 
 // ---- Pre-Rev Tests ----
 
-void testIsPreRevActiveWhenSwitchOpen()
+void testIsPreRevActiveWhenSwitchClosed()
 {
-  // NC switch: at rest pin is LOW (closed to GND).
-  // When switch is activated (opened), pin goes HIGH via INPUT_PULLUP.
-  assertBool( "isPreRevActive: pin HIGH (switch open) returns true", true, isPreRevActive( true ) );
+  // NC switch behind the trigger: at rest the plunger is held depressed
+  // by the trigger face so the C+NC pair is open and the pullup leaves
+  // the pin HIGH = pre-rev off. Pulling the trigger releases the plunger,
+  // the NC contacts close to GND and the pin goes LOW = pre-rev on.
+  assertBool( "isPreRevActive: pin LOW (switch closed) returns true", true, isPreRevActive( false ) );
 }
 
-void testIsPreRevInactiveWhenSwitchClosed()
+void testIsPreRevInactiveWhenSwitchOpen()
 {
-  // NC switch: at rest pin is LOW (closed to GND) = pre-rev off.
-  assertBool( "isPreRevActive: pin LOW (switch closed) returns false", false, isPreRevActive( false ) );
+  // Trigger at rest: plunger depressed, NC open, pin HIGH via pullup = pre-rev off.
+  assertBool( "isPreRevActive: pin HIGH (switch open) returns false", false, isPreRevActive( true ) );
 }
 
 void testPreRevRPMDefaultConstant()
@@ -854,7 +856,7 @@ unsigned long calculateEncoderPreRevRPM( unsigned long currentRPM, int direction
 
 bool isPreRevActive( bool pinHigh )
 {
-  return pinHigh;
+  return !pinHigh;
 }
 
 bool isMp5SlapSafe( bool pinHigh )
@@ -1007,8 +1009,8 @@ void setup()
   testIsMp5SlapUnsafeWhenBoltOpen();
 
   // Pre-rev tests
-  testIsPreRevActiveWhenSwitchOpen();
-  testIsPreRevInactiveWhenSwitchClosed();
+  testIsPreRevActiveWhenSwitchClosed();
+  testIsPreRevInactiveWhenSwitchOpen();
   testPreRevRPMDefaultConstant();
   testPreRevRPMMinConstant();
   testPreRevRPMMaxConstant();

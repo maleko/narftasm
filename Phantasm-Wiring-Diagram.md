@@ -7,7 +7,7 @@
 | **SPST On-Off Toggle Switch** | Master power switch — cuts battery power to the board |
 | **3-Position 2-Pole Slide Switch (2P3T)** | Selects fire mode (Single / Burst / Full Auto) |
 | **Trigger Microswitch** | Already installed — fires darts (wired NO) |
-| **Rev Microswitch** | Pre-rev toggle — keeps flywheels idling at low RPM (wired NC) |
+| **Rev Microswitch** | Pre-rev trigger — mounted behind the trigger face, keeps flywheels idling at low RPM while the trigger is pulled slightly (wired NC) |
 | **MP5 Slap Microswitch** | Bolt-lock safety — prevents firing when bolt is open (wired NC) |
 | **KY-040 Rotary Encoder** | Adjusts parameters — button cycles: RPM → Burst → Pre-Rev |
 | **0.96" I2C SSD1306 OLED** (128×64, 5V tolerant) | Displays fire mode, RPM, burst count, and pre-rev status |
@@ -54,7 +54,7 @@ graph TD
         A2["A2 — PIN_MP5_SLAP"]
         D11["D11 — PIN_ENCODER_DT"]
         D12["D12 — PIN_ENCODER_SW"]
-        A1["A1 — PIN_PRE_REV"]
+        D13["D13 — PIN_PRE_REV"]
         A4["A4 — SDA"]
         A5["A5 — SCL"]
         VCC["5V"]
@@ -113,7 +113,7 @@ graph TD
     TC -->|"wire"| D6
     TNO -->|"wire"| GND
 
-    RC -->|"wire"| A1
+    RC -->|"wire"| D13
     RNC -->|"wire"| GND
 
     MC -->|"wire"| A2
@@ -137,7 +137,7 @@ graph TD
     style TRIG fill:#3a5c1a,stroke:#30b570,color:#ffffff
     style REV fill:#3a5c1a,stroke:#30b570,color:#ffffff
     style MP5 fill:#3a5c1a,stroke:#30b570,color:#ffffff
-    style A1 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
+    style D13 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style A2 fill:#2a4a6c,stroke:#4a8eff,color:#ffffff
     style ENC fill:#1a5c3a,stroke:#36ff72,color:#ffffff
     style OLED fill:#5c1a3a,stroke:#ff3672,color:#ffffff
@@ -163,7 +163,7 @@ graph TD
 | **D3** | Slide switch — Pole B Common |
 | **A3** | Rotary encoder — CLK |
 | **D6** | Trigger microswitch — Common |
-| **A1** | Rev microswitch — Common |
+| **D13** | Rev microswitch — Common |
 | **A2** | MP5 slap microswitch — Common |
 | **D11** | Rotary encoder — DT |
 | **D12** | Rotary encoder — SW (push button) |
@@ -210,9 +210,14 @@ as **Burst**.
 - The **trigger microswitch** uses the **Normally Open (NO)** terminal.
   At rest the pin is HIGH (pullup); pressing the trigger closes the
   circuit to GND, pulling the pin LOW.
-- The **rev microswitch** uses the **Normally Closed (NC)** terminal.
-  At rest the pin is LOW (closed to GND); activating the switch opens
-  the circuit, and the pullup pulls the pin HIGH to enable pre-rev.
+- The **rev microswitch** uses the **Normally Closed (NC)** terminal and
+  is mounted behind the trigger face. At rest the trigger face holds the
+  switch plunger depressed so the C+NC pair is open and the pullup pulls
+  the pin HIGH (pre-rev off). Pulling the trigger slightly releases the
+  plunger, the NC contacts close to GND, and the pin goes LOW to enable
+  pre-rev. Further trigger travel actuates the main trigger (D6) for
+  firing. Must not share A1 — that pin is used internally by the NBC
+  half-bridge brake output.
 - The **MP5 slap microswitch** uses the **Normally Closed (NC)** terminal.
   At rest (bolt locked) the pin is LOW (closed to GND); when the bolt is
   open the switch opens and the pullup pulls the pin HIGH. Firing is

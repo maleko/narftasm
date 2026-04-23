@@ -15,8 +15,9 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
   At rest (bolt locked) the switch is closed to GND (pin LOW = safe).
   When the bolt is open the switch opens and the pullup pulls the pin
   HIGH, disabling firing independently of the fire-mode selector.
-- **Pre-Rev** — NC microswitch on A1 keeps flywheels idling at low RPM
-  for faster spin-up response when firing. Idle speed is adjustable
+- **Pre-Rev** — NC microswitch on D13 sits behind the trigger and keeps
+  flywheels idling at low RPM while the trigger is pulled slightly, for
+  faster spin-up when the main trigger actuates. Idle speed is adjustable
   via the encoder (2000–5000 RPM in 250 RPM steps)
 - **Variable RPM** — KY-040 rotary encoder adjusts flywheel speed
   (3000–8000 RPM in 250 RPM steps). Encoder button cycles through
@@ -30,7 +31,7 @@ Thanks to Airzone-sama for the Narfduino Brushless Compleat and Gifd for the Pha
 | Component | Pins |
 |---|---|
 | Trigger microswitch (NO) | D6 |
-| Rev microswitch (NC) | A1 |
+| Rev microswitch (NC) | D13 |
 | MP5 slap microswitch (NC) | A2 |
 | 3-position 2P3T slide switch | D2, D3 |
 | KY-040 rotary encoder | A3 (CLK), D11 (DT), D12 (SW) |
