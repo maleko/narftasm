@@ -60,6 +60,8 @@ uint8_t centerTileCol( uint8_t labelLen, uint8_t scale );
 void formatVoltageShort( float voltage, char* buf, size_t bufSize );
 const char* getCenterModeLabel( FireMode mode, bool safe );
 bool shouldCalibrateNow( bool pending, bool inEditState, uint32_t lastChangeMs, uint32_t nowMs, uint32_t idleMs );
+int simulateLoopSingleShot( const int* samples, int len, int* lastTriggerState );
+int simulateLoopBurstFire( const int* samples, int len, int* lastTriggerState, int burstCount );
 
 // ---- Test harness ----
 int testsPassed = 0;
@@ -202,6 +204,72 @@ void testFireModeEnumValues()
   assertEq( "FIRE_MODE_SINGLE is 0", 0, FIRE_MODE_SINGLE );
   assertEq( "FIRE_MODE_BURST is 1", 1, FIRE_MODE_BURST );
   assertEq( "FIRE_MODE_FULL_AUTO is 2", 2, FIRE_MODE_FULL_AUTO );
+}
+
+void testDisplayedModeSentinelDiffersFromAllModes()
+{
+  // drawView()'s mode dirty-check is `mode != displayedMode`, so the initial
+  // value of displayedMode must not collide with any real FireMode or the
+  // first render skips the label (leaving splash remnants on screen until
+  // the selector is moved). (FireMode)-1 is the canonical sentinel.
+  FireMode sentinel = (FireMode)-1;
+  assertEq( "sentinel != FIRE_MODE_SINGLE",    true, sentinel != FIRE_MODE_SINGLE );
+  assertEq( "sentinel != FIRE_MODE_BURST",     true, sentinel != FIRE_MODE_BURST );
+  assertEq( "sentinel != FIRE_MODE_FULL_AUTO", true, sentinel != FIRE_MODE_FULL_AUTO );
+}
+
+// ---- Trigger dispatch state tests (regression for release-resync bug) ----
+// singleShot()/burstFire() are only invoked from inside loop()'s
+// while(trigger==LOW) hold loop, so they never observe the release edge.
+// Without resyncing lastTriggerState=HIGH on loop exit, the second press is
+// seen as "already LOW", no edge is detected, and no shot fires. These tests
+// drive the simulator through multiple press/release sessions.
+
+void testSingleShotFiresOnEveryPressReleaseCycle()
+{
+  int last = HIGH;
+  int press[] = { LOW, LOW };
+
+  assertEq( "single: 1st press fires", 1, simulateLoopSingleShot( press, 2, &last ) );
+  assertEq( "single: 2nd press fires (regression)", 1, simulateLoopSingleShot( press, 2, &last ) );
+  assertEq( "single: 3rd press fires (regression)", 1, simulateLoopSingleShot( press, 2, &last ) );
+}
+
+void testSingleShotDoesNotRefireWhileHeld()
+{
+  int last = HIGH;
+  int heldLong[] = { LOW, LOW, LOW, LOW, LOW };
+  assertEq( "single: holding trigger fires once per press", 1,
+    simulateLoopSingleShot( heldLong, 5, &last ) );
+}
+
+void testSingleShotLastStateHighAfterLoopExit()
+{
+  int last = HIGH;
+  int press[] = { LOW, LOW };
+  simulateLoopSingleShot( press, 2, &last );
+  assertEq( "single: lastTriggerState resyncs to HIGH on exit", HIGH, last );
+}
+
+void testBurstFireFiresOnEveryPressReleaseCycle()
+{
+  int last = HIGH;
+  int press[] = { LOW, LOW };
+
+  assertEq( "burst: 1st press fires burstCount", 3,
+    simulateLoopBurstFire( press, 2, &last, 3 ) );
+  assertEq( "burst: 2nd press fires burstCount (regression)", 3,
+    simulateLoopBurstFire( press, 2, &last, 3 ) );
+  assertEq( "burst: 3rd press fires burstCount (regression)", 3,
+    simulateLoopBurstFire( press, 2, &last, 3 ) );
+}
+
+void testBurstFireDoesNotRefireWhileHeld()
+{
+  int last = HIGH;
+  int heldLong[] = { LOW, LOW, LOW, LOW, LOW };
+  assertEq( "burst: holding trigger fires one burst per press", 3,
+    simulateLoopBurstFire( heldLong, 5, &last, 3 ) );
 }
 
 // ---- Fire Mode Debounce Tests ----
@@ -946,6 +1014,47 @@ const char* getCenterModeLabel( FireMode mode, bool safe )
   }
 }
 
+// Mirrors loop()'s trigger-hold dispatch for SINGLE mode: iterate while the
+// sample is LOW, running singleShot()'s edge check each step; on exit, resync
+// lastTriggerState to HIGH so the next press is observed as a fresh edge.
+int simulateLoopSingleShot( const int* samples, int len, int* lastTriggerState )
+{
+  int fires = 0;
+  int i = 0;
+  while( i < len && samples[i] == LOW )
+  {
+    int trig = samples[i];
+    if( trig != *lastTriggerState )
+    {
+      if( trig == LOW ) fires++;
+      *lastTriggerState = trig;
+    }
+    i++;
+  }
+  *lastTriggerState = HIGH;
+  return fires;
+}
+
+// Mirrors loop()'s trigger-hold dispatch for BURST mode: each detected press
+// edge produces burstCount shots (burstFire() runs the full burst inline).
+int simulateLoopBurstFire( const int* samples, int len, int* lastTriggerState, int burstCount )
+{
+  int fires = 0;
+  int i = 0;
+  while( i < len && samples[i] == LOW )
+  {
+    int trig = samples[i];
+    if( trig != *lastTriggerState )
+    {
+      if( trig == LOW ) fires += burstCount;
+      *lastTriggerState = trig;
+    }
+    i++;
+  }
+  *lastTriggerState = HIGH;
+  return fires;
+}
+
 void setup()
 {
   Serial.begin( 115200 );
@@ -964,6 +1073,12 @@ void setup()
   testGetFireModeFallback();
   testBurstCountIsThree();
   testSingleShotEdgeDetection();
+  testDisplayedModeSentinelDiffersFromAllModes();
+  testSingleShotFiresOnEveryPressReleaseCycle();
+  testSingleShotDoesNotRefireWhileHeld();
+  testSingleShotLastStateHighAfterLoopExit();
+  testBurstFireFiresOnEveryPressReleaseCycle();
+  testBurstFireDoesNotRefireWhileHeld();
 
   // Fire mode debounce tests
   testDebounceFireModeNoChangeWhenStable();

@@ -103,7 +103,7 @@ MenuItem displayedMenuSelection = MENU_ITEM_RPM;
 uint32_t lastActivityMs = 0;
 unsigned long displayedRPM = 0;
 int displayedBurstCount = 0;
-FireMode displayedMode = FIRE_MODE_SINGLE;
+FireMode displayedMode = (FireMode)-1;
 bool displayedSafe = false;
 float displayedVoltage = -1.0;
 int lastButtonState = HIGH;
@@ -834,6 +834,10 @@ void loop()
     selectFire( readAndDebounceFireMode() );
     NBCProcessFlywheelSpeed();
   }
+
+  // Trigger is HIGH here (loop exit condition); resync edge-detection state
+  // so the next press is seen as a fresh HIGH->LOW edge by singleShot()/burstFire().
+  lastTriggerState = HIGH;
 
   NBCProcessFlywheelSpeed();
 
