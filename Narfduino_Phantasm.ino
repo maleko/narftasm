@@ -26,9 +26,9 @@
 #define BURST_COUNT_MAX 10
 #define ENCODER_BURST_STEP 1
 #define MOTOR_RPM_MIN 3000
-#define MOTOR_RPM_MAX 8000
-#define MOTOR_RPM_DEFAULT 5000
-#define ENCODER_RPM_STEP 250
+#define MOTOR_RPM_MAX 35000
+#define MOTOR_RPM_DEFAULT 20000
+#define ENCODER_RPM_STEP 1000
 
 // --- Fire Mode Enum ---
 enum FireMode {
