@@ -69,7 +69,7 @@
     <text x="664" y="354" class="pin">D3 / PIN_SELECT_2</text>
     <text x="956" y="444" class="pin right">A3 / PIN_ENCODER_CLK</text>
     <text x="664" y="594" class="pin">D6 / PIN_TRIGGER</text>
-    <text x="664" y="724" class="pin">A1 / PIN_PRE_REV</text>
+    <text x="664" y="724" class="pin">D13 / PIN_PRE_REV</text>
     <text x="664" y="854" class="pin">A2 / PIN_MP5_SLAP</text>
 
     <line class="sym" x1="970" y1="220" x2="1020" y2="220"/>
@@ -160,7 +160,7 @@
     <line class="wire" x1="390" y1="740" x2="390" y2="720"/>
     <line class="wire" x1="390" y1="720" x2="600" y2="720"/>
     <text x="120" y="780" class="tiny center">NC → GND</text>
-    <text x="290" y="780" class="tiny center">C → A1</text>
+    <text x="290" y="780" class="tiny center">C → D13</text>
   </g>
 
   <g id="mp5-s4">
